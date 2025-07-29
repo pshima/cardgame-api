@@ -136,6 +136,15 @@ func main() {
 	r.POST("/game/:gameId/hit/:playerId", playerHit)
 	r.POST("/game/:gameId/stand/:playerId", playerStand)
 	r.GET("/game/:gameId/results", getGameResults)
+	
+	// Cribbage endpoints
+	r.GET("/game/new/cribbage", createNewCribbageGame)
+	r.POST("/game/:gameId/cribbage/start", startCribbageGame)
+	r.POST("/game/:gameId/cribbage/discard/:playerId", cribbageDiscard)
+	r.POST("/game/:gameId/cribbage/play/:playerId", cribbagePlay)
+	r.POST("/game/:gameId/cribbage/go/:playerId", cribbageGo)
+	r.GET("/game/:gameId/cribbage/show", cribbageShow)
+	r.GET("/game/:gameId/cribbage/state", getCribbageState)
 	r.GET("/game/:gameId/reset", resetDeck)
 	r.GET("/game/:gameId/reset/:decks", resetDeckWithDecks)
 	r.GET("/game/:gameId/reset/:decks/:type", resetDeckWithType)
@@ -1136,4 +1145,367 @@ func getGameResults(c *gin.Context) {
 		"players": playerResults,
 		"results": results,
 	})
+}
+
+// Cribbage API handlers
+func createNewCribbageGame(c *gin.Context) {
+	game := gameManager.CreateGameWithType(1, Standard, Cribbage, 2)
+	c.JSON(http.StatusOK, gin.H{
+		"game_id":        game.ID,
+		"game_type":      game.GameType.String(),
+		"deck_name":      game.Deck.Name,
+		"deck_type":      game.Deck.DeckType.String(),
+		"max_players":    game.MaxPlayers,
+		"current_players": len(game.Players),
+		"message":        "New Cribbage game created",
+		"remaining_cards": game.Deck.RemainingCards(),
+		"created":        game.Created,
+	})
+}
+
+func startCribbageGame(c *gin.Context) {
+	gameID := c.Param("gameId")
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
+
+	game, exists := gameManager.GetGame(gameID)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Game not found",
+		})
+		return
+	}
+
+	err := game.StartCribbageGame()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"game_id":        game.ID,
+		"game_type":      game.GameType.String(),
+		"status":         game.Status.String(),
+		"phase":          game.CribbageState.Phase.String(),
+		"dealer":         game.CribbageState.Dealer,
+		"current_player": game.CurrentPlayer,
+		"message":        "Cribbage game started",
+	})
+}
+
+func cribbageDiscard(c *gin.Context) {
+	gameID := c.Param("gameId")
+	playerID := c.Param("playerId")
+	
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
+	
+	if !validatePlayerID(playerID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid player ID format",
+		})
+		return
+	}
+
+	var request struct {
+		CardIndices []int `json:"card_indices" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid request body",
+		})
+		return
+	}
+
+	game, exists := gameManager.GetGame(gameID)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Game not found",
+		})
+		return
+	}
+
+	err := game.CribbageDiscard(playerID, request.CardIndices)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	player := game.GetPlayer(playerID)
+	response := gin.H{
+		"game_id":     game.ID,
+		"player_id":   playerID,
+		"player_name": player.Name,
+		"phase":       game.CribbageState.Phase.String(),
+		"message":     "Cards discarded to crib",
+	}
+
+	// If phase changed to play, include starter card
+	if game.CribbageState.Phase == CribbagePlay && game.CribbageState.Starter != nil {
+		baseURL := getBaseURL(c)
+		response["starter"] = game.CribbageState.Starter.ToCardWithImages(baseURL)
+		response["message"] = "Cards discarded, starter cut, play phase begun"
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+func cribbagePlay(c *gin.Context) {
+	gameID := c.Param("gameId")
+	playerID := c.Param("playerId")
+	
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
+	
+	if !validatePlayerID(playerID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid player ID format",
+		})
+		return
+	}
+
+	var request struct {
+		CardIndex int `json:"card_index" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid request body",
+		})
+		return
+	}
+
+	game, exists := gameManager.GetGame(gameID)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Game not found",
+		})
+		return
+	}
+
+	err := game.CribbagePlay(playerID, request.CardIndex)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	player := game.GetPlayer(playerID)
+	playerIndex := -1
+	for i, p := range game.Players {
+		if p.ID == playerID {
+			playerIndex = i
+			break
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"game_id":      game.ID,
+		"player_id":    playerID,
+		"player_name":  player.Name,
+		"play_total":   game.CribbageState.PlayTotal,
+		"play_count":   game.CribbageState.PlayCount,
+		"player_score": game.CribbageState.PlayerScores[playerIndex],
+		"phase":        game.CribbageState.Phase.String(),
+		"current_player": game.CurrentPlayer,
+		"message":      "Card played",
+	})
+}
+
+func cribbageGo(c *gin.Context) {
+	gameID := c.Param("gameId")
+	playerID := c.Param("playerId")
+	
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
+	
+	if !validatePlayerID(playerID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid player ID format",
+		})
+		return
+	}
+
+	game, exists := gameManager.GetGame(gameID)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Game not found",
+		})
+		return
+	}
+
+	err := game.CribbageGo(playerID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	player := game.GetPlayer(playerID)
+	c.JSON(http.StatusOK, gin.H{
+		"game_id":        game.ID,
+		"player_id":      playerID,
+		"player_name":    player.Name,
+		"play_total":     game.CribbageState.PlayTotal,
+		"current_player": game.CurrentPlayer,
+		"message":        player.Name + " says go",
+	})
+}
+
+func cribbageShow(c *gin.Context) {
+	gameID := c.Param("gameId")
+	
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
+
+	game, exists := gameManager.GetGame(gameID)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Game not found",
+		})
+		return
+	}
+
+	if game.CribbageState == nil || game.CribbageState.Phase != CribbageShow {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Not in show phase",
+		})
+		return
+	}
+
+	scores := game.CribbageShow()
+	if scores == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Unable to score hands",
+		})
+		return
+	}
+
+	response := gin.H{
+		"game_id": game.ID,
+		"scores":  scores,
+		"player_scores": game.CribbageState.PlayerScores,
+		"phase":   game.CribbageState.Phase.String(),
+		"status":  game.Status.String(),
+	}
+
+	// Check if game is finished
+	if game.Status == GameFinished {
+		if winnerVal, hasWinner := scores["winner"]; hasWinner {
+			if idx, ok := winnerVal.(int); ok && idx >= 0 && idx < len(game.Players) {
+				response["winner"] = game.Players[idx].Name
+				response["winner_id"] = game.Players[idx].ID
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+func getCribbageState(c *gin.Context) {
+	gameID := c.Param("gameId")
+	
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
+
+	game, exists := gameManager.GetGame(gameID)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Game not found",
+		})
+		return
+	}
+
+	if game.GameType != Cribbage || game.CribbageState == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Not a cribbage game",
+		})
+		return
+	}
+
+	baseURL := getBaseURL(c)
+	
+	// Convert player hands with images
+	var playersWithImages []gin.H
+	for i, player := range game.Players {
+		var handWithImages []CardWithImages
+		for _, card := range player.Hand {
+			handWithImages = append(handWithImages, ToCardWithImagesPtr(card, baseURL))
+		}
+		
+		playersWithImages = append(playersWithImages, gin.H{
+			"id":         player.ID,
+			"name":       player.Name,
+			"hand":       handWithImages,
+			"hand_size":  player.HandSize(),
+			"score":      game.CribbageState.PlayerScores[i],
+		})
+	}
+
+	// Convert crib cards with images
+	var cribWithImages []CardWithImages
+	for _, card := range game.CribbageState.Crib {
+		cribWithImages = append(cribWithImages, ToCardWithImagesPtr(card, baseURL))
+	}
+
+	// Convert played cards with images
+	var playedWithImages []CardWithImages
+	for _, card := range game.CribbageState.PlayedCards {
+		playedWithImages = append(playedWithImages, ToCardWithImagesPtr(card, baseURL))
+	}
+
+	response := gin.H{
+		"game_id":        game.ID,
+		"game_type":      game.GameType.String(),
+		"status":         game.Status.String(),
+		"phase":          game.CribbageState.Phase.String(),
+		"dealer":         game.CribbageState.Dealer,
+		"current_player": game.CurrentPlayer,
+		"players":        playersWithImages,
+		"crib":           cribWithImages,
+		"crib_size":      len(game.CribbageState.Crib),
+		"played_cards":   playedWithImages,
+		"play_total":     game.CribbageState.PlayTotal,
+		"play_count":     game.CribbageState.PlayCount,
+		"player_scores":  game.CribbageState.PlayerScores,
+		"game_score":     game.CribbageState.GameScore,
+	}
+
+	// Include starter if available
+	if game.CribbageState.Starter != nil {
+		response["starter"] = game.CribbageState.Starter.ToCardWithImages(baseURL)
+	}
+
+	c.JSON(http.StatusOK, response)
 }
