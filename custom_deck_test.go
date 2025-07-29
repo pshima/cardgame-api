@@ -463,6 +463,7 @@ func TestListDeckTypesEndpoint(t *testing.T) {
 	for _, deckTypeInterface := range deckTypes {
 		deckType := deckTypeInterface.(map[string]interface{})
 		
+		assert.Contains(t, deckType, "id")
 		assert.Contains(t, deckType, "type")
 		assert.Contains(t, deckType, "name")
 		assert.Contains(t, deckType, "description")
@@ -470,6 +471,7 @@ func TestListDeckTypesEndpoint(t *testing.T) {
 		
 		if deckType["type"] == "Standard" {
 			standardFound = true
+			assert.Equal(t, float64(0), deckType["id"])
 			assert.Equal(t, "Standard", deckType["name"])
 			assert.Equal(t, "Traditional 52-card deck with all ranks from Ace to King in all four suits", deckType["description"])
 			assert.Equal(t, float64(52), deckType["cards_per_deck"])
@@ -477,6 +479,7 @@ func TestListDeckTypesEndpoint(t *testing.T) {
 		
 		if deckType["type"] == "Spanish21" {
 			spanish21Found = true
+			assert.Equal(t, float64(1), deckType["id"])
 			assert.Equal(t, "Spanish21", deckType["name"])
 			assert.Equal(t, "Spanish 21 deck with 48 cards - all 10s removed, perfect for Spanish Blackjack", deckType["description"])
 			assert.Equal(t, float64(48), deckType["cards_per_deck"])

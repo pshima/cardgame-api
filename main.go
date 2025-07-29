@@ -335,6 +335,7 @@ func listDeckTypes(c *gin.Context) {
 	
 	for _, deckType := range deckTypes {
 		deckInfo = append(deckInfo, gin.H{
+			"id":             int(deckType),
 			"type":           deckType.String(),
 			"name":           deckType.String(),
 			"description":    deckType.Description(),
