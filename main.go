@@ -11,6 +11,7 @@ import (
 )
 
 var gameManager *GameManager
+var customDeckManager *CustomDeckManager
 
 // Security patterns for input validation
 var (
@@ -80,6 +81,17 @@ func sanitizeString(input string, maxLength int) string {
 	return cleaned
 }
 
+// validateDeckName checks if deck name is valid (1-128 characters)
+func validateDeckName(name string) bool {
+	return len(name) >= 1 && len(name) <= 128
+}
+
+// validateCardIndex checks if card index is valid
+func validateCardIndex(indexStr string) (int, bool) {
+	index, valid := validateNumber(indexStr)
+	return index, valid
+}
+
 // getBaseURL extracts the base URL from the request
 func getBaseURL(c *gin.Context) string {
 	scheme := "http"
@@ -102,6 +114,7 @@ func getBaseURL(c *gin.Context) string {
 
 func main() {
 	gameManager = NewGameManager()
+	customDeckManager = NewCustomDeckManager()
 	r := gin.Default()
 	
 	// Serve static files for card images
@@ -150,6 +163,16 @@ func main() {
 	r.GET("/game/:gameId/reset/:decks/:type", resetDeckWithType)
 	r.DELETE("/game/:gameId", deleteGame)
 	r.GET("/games", listGames)
+	
+	// Custom deck endpoints
+	r.POST("/custom-decks", createCustomDeck)
+	r.GET("/custom-decks", listCustomDecks)
+	r.GET("/custom-decks/:deckId", getCustomDeck)
+	r.DELETE("/custom-decks/:deckId", deleteCustomDeck)
+	r.POST("/custom-decks/:deckId/cards", addCustomCard)
+	r.GET("/custom-decks/:deckId/cards", listCustomCards)
+	r.GET("/custom-decks/:deckId/cards/:cardIndex", getCustomCard)
+	r.DELETE("/custom-decks/:deckId/cards/:cardIndex", deleteCustomCard)
 
 	r.Run(":8080")
 }
@@ -1508,4 +1531,299 @@ func getCribbageState(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, response)
+}
+
+// Custom deck request/response structures
+type CreateCustomDeckRequest struct {
+	Name string `json:"name" binding:"required"`
+}
+
+type AddCustomCardRequest struct {
+	Name       string            `json:"name" binding:"required"`
+	Rank       interface{}       `json:"rank,omitempty"`
+	Suit       string            `json:"suit,omitempty"`
+	Attributes map[string]string `json:"attributes,omitempty"`
+}
+
+// Custom deck handlers
+func createCustomDeck(c *gin.Context) {
+	var req CreateCustomDeckRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid JSON: " + err.Error(),
+		})
+		return
+	}
+
+	name := sanitizeString(req.Name, 128)
+	if !validateDeckName(name) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Deck name must be 1-128 characters",
+		})
+		return
+	}
+
+	deck := customDeckManager.CreateDeck(name)
+	c.JSON(http.StatusCreated, gin.H{
+		"id":      deck.ID,
+		"name":    deck.Name,
+		"message": "Custom deck created successfully",
+		"created": deck.Created,
+	})
+}
+
+func listCustomDecks(c *gin.Context) {
+	decks := customDeckManager.ListDecks()
+	
+	deckSummaries := make([]gin.H, len(decks))
+	for i, deck := range decks {
+		deckSummaries[i] = gin.H{
+			"id":         deck.ID,
+			"name":       deck.Name,
+			"card_count": deck.CardCount(),
+			"created":    deck.Created,
+			"last_used":  deck.LastUsed,
+		}
+	}
+	
+	c.JSON(http.StatusOK, gin.H{
+		"decks": deckSummaries,
+		"count": len(decks),
+	})
+}
+
+func getCustomDeck(c *gin.Context) {
+	deckID := sanitizeString(c.Param("deckId"), 50)
+	if !validateUUID(deckID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid deck ID format",
+		})
+		return
+	}
+
+	deck, exists := customDeckManager.GetDeck(deckID)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Custom deck not found",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":         deck.ID,
+		"name":       deck.Name,
+		"card_count": deck.CardCount(),
+		"cards":      deck.ListCards(false),
+		"created":    deck.Created,
+		"last_used":  deck.LastUsed,
+	})
+}
+
+func deleteCustomDeck(c *gin.Context) {
+	deckID := sanitizeString(c.Param("deckId"), 50)
+	if !validateUUID(deckID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid deck ID format",
+		})
+		return
+	}
+
+	deleted := customDeckManager.DeleteDeck(deckID)
+	if !deleted {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Custom deck not found",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Custom deck deleted successfully",
+	})
+}
+
+func addCustomCard(c *gin.Context) {
+	deckID := sanitizeString(c.Param("deckId"), 50)
+	if !validateUUID(deckID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid deck ID format",
+		})
+		return
+	}
+
+	deck, exists := customDeckManager.GetDeck(deckID)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Custom deck not found",
+		})
+		return
+	}
+
+	if deck.CardCount() >= 2000 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Maximum card limit (2000) reached for this deck",
+		})
+		return
+	}
+
+	var req AddCustomCardRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid JSON: " + err.Error(),
+		})
+		return
+	}
+
+	name := sanitizeString(req.Name, 100)
+	if len(name) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Card name cannot be empty",
+		})
+		return
+	}
+
+	suit := sanitizeString(req.Suit, 50)
+	
+	if req.Attributes != nil && len(req.Attributes) > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Maximum 100 attributes allowed per card",
+		})
+		return
+	}
+
+	sanitizedAttributes := make(map[string]string)
+	if req.Attributes != nil {
+		for k, v := range req.Attributes {
+			cleanKey := sanitizeString(k, 50)
+			cleanValue := sanitizeString(v, 200)
+			if len(cleanKey) > 0 {
+				sanitizedAttributes[cleanKey] = cleanValue
+			}
+		}
+	}
+
+	card := deck.AddCard(name, req.Rank, suit, sanitizedAttributes)
+	
+	c.JSON(http.StatusCreated, gin.H{
+		"index":           card.Index,
+		"name":            card.Name,
+		"rank":            card.Rank,
+		"suit":            card.Suit,
+		"game_compatible": card.GameCompatible,
+		"attributes":      card.Attributes,
+		"message":         "Card added successfully",
+	})
+}
+
+func listCustomCards(c *gin.Context) {
+	deckID := sanitizeString(c.Param("deckId"), 50)
+	if !validateUUID(deckID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid deck ID format",
+		})
+		return
+	}
+
+	deck, exists := customDeckManager.GetDeck(deckID)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Custom deck not found",
+		})
+		return
+	}
+
+	includeDeleted := c.Query("include_deleted") == "true"
+	cards := deck.ListCards(includeDeleted)
+
+	c.JSON(http.StatusOK, gin.H{
+		"deck_id":    deck.ID,
+		"deck_name":  deck.Name,
+		"cards":      cards,
+		"card_count": len(cards),
+	})
+}
+
+func getCustomCard(c *gin.Context) {
+	deckID := sanitizeString(c.Param("deckId"), 50)
+	if !validateUUID(deckID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid deck ID format",
+		})
+		return
+	}
+
+	cardIndexStr := sanitizeString(c.Param("cardIndex"), 10)
+	cardIndex, valid := validateCardIndex(cardIndexStr)
+	if !valid {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid card index",
+		})
+		return
+	}
+
+	deck, exists := customDeckManager.GetDeck(deckID)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Custom deck not found",
+		})
+		return
+	}
+
+	card := deck.GetCard(cardIndex)
+	if card == nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Card not found",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"deck_id":         deck.ID,
+		"deck_name":       deck.Name,
+		"index":           card.Index,
+		"name":            card.Name,
+		"rank":            card.Rank,
+		"suit":            card.Suit,
+		"game_compatible": card.GameCompatible,
+		"attributes":      card.Attributes,
+		"deleted":         card.Deleted,
+	})
+}
+
+func deleteCustomCard(c *gin.Context) {
+	deckID := sanitizeString(c.Param("deckId"), 50)
+	if !validateUUID(deckID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid deck ID format",
+		})
+		return
+	}
+
+	cardIndexStr := sanitizeString(c.Param("cardIndex"), 10)
+	cardIndex, valid := validateCardIndex(cardIndexStr)
+	if !valid {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid card index",
+		})
+		return
+	}
+
+	deck, exists := customDeckManager.GetDeck(deckID)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Custom deck not found",
+		})
+		return
+	}
+
+	deleted := deck.DeleteCard(cardIndex)
+	if !deleted {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Card not found",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Card marked as deleted (tombstone delete)",
+	})
 }
