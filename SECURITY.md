@@ -50,6 +50,16 @@ All user input from URI parameters and JSON request bodies is validated and sani
 - Enforces maximum length limits
 - Prevents buffer overflow and injection attacks
 
+#### `validateDeckName(name string) bool`
+- Validates custom deck names
+- Must be 1-128 characters in length
+- Applied after sanitization
+
+#### `validateCardIndex(indexStr string) (int, bool)`
+- Validates custom card indices
+- Must be non-negative integers
+- Used for custom card operations
+
 ### Protected Endpoints
 
 All endpoints that accept URI parameters are protected:
@@ -83,6 +93,15 @@ All endpoints that accept URI parameters are protected:
    - `/game/:gameId/discard/:pileId`
    - Validates alphanumeric pattern with length limit
 
+7. **Custom Deck ID Parameters**
+   - `/custom-decks/:deckId` - Custom deck UUID
+   - `/custom-decks/:deckId/cards/*` - All custom deck card endpoints
+   - Validates UUID format before processing
+
+8. **Custom Card Index Parameters**
+   - `/custom-decks/:deckId/cards/:cardIndex`
+   - Validates non-negative integer indices
+
 ### JSON Request Body Validation
 
 1. **Player Name** (POST `/game/:gameId/players`)
@@ -97,6 +116,48 @@ All endpoints that accept URI parameters are protected:
 3. **Card Index** (POST `/game/:gameId/discard/:pileId`)
    - Must be between 0-51 (reasonable card limit)
    - Prevents array index out of bounds
+
+4. **Custom Deck Name** (POST `/custom-decks`)
+   - Sanitized to remove control characters
+   - Must be 1-128 characters after sanitization
+   - Cannot be empty
+
+5. **Custom Card Data** (POST `/custom-decks/:deckId/cards`)
+   - **Name**: Required, sanitized, max 100 characters
+   - **Rank**: Optional, can be numeric or string
+   - **Suit**: Optional, sanitized, max 50 characters
+   - **Attributes**: Optional, max 100 key-value pairs
+     - Keys: Sanitized, max 50 characters each
+     - Values: Sanitized, max 200 characters each
+   - **Deck Limit**: Maximum 2,000 cards per deck
+
+### Proxy Security Configuration
+
+#### Trusted Proxy Setup
+The application implements secure proxy handling to prevent IP spoofing and header injection attacks:
+
+1. **Environment Configuration**
+   - Set `TRUSTED_PROXIES` environment variable with actual proxy IPs
+   - Example: `TRUSTED_PROXIES="10.0.1.100,192.168.1.0/24,172.16.0.1"`
+   - Defaults to localhost IPs for development
+
+2. **Proxy Header Validation**
+   - Only accepts `X-Forwarded-Proto` from trusted proxy IPs
+   - Validates protocol values (only "http" or "https" accepted)
+   - Ignores `X-Forwarded-Host` to prevent host header injection
+
+3. **Production Deployment**
+   ```bash
+   # Example for Nginx reverse proxy
+   export TRUSTED_PROXIES="10.0.1.100"
+   export GIN_MODE="release"
+   ```
+
+4. **Common Proxy Configurations**
+   - **Nginx/Apache**: Use the load balancer's internal IP
+   - **Cloudflare**: Use Cloudflare's IP ranges
+   - **AWS ALB**: Use the ALB's private IP range
+   - **Google Cloud**: Use the load balancer IP range
 
 ### Security Benefits
 
@@ -122,6 +183,18 @@ All endpoints that accept URI parameters are protected:
    - Range checks prevent logical errors
    - Empty or malformed data is rejected
 
+6. **Custom Deck Security**
+   - Strict limits on deck names, card counts, and attributes
+   - Prevents resource exhaustion through large custom decks
+   - Validates custom card data structure and content
+   - Tombstone deletion prevents data loss while allowing cleanup
+
+7. **Proxy Security**
+   - Configured trusted proxy list to prevent IP spoofing
+   - Only accepts proxy headers from trusted sources
+   - Environment-based proxy configuration for production
+   - Validates X-Forwarded-Proto headers from trusted proxies only
+
 ### Error Responses
 
 When validation fails, the API returns appropriate error messages:
@@ -131,6 +204,11 @@ When validation fails, the API returns appropriate error messages:
   - "Invalid decks parameter (must be 1-100)"
   - "Invalid player ID format"
   - "Player name cannot be empty"
+  - "Invalid deck ID format"
+  - "Deck name must be 1-128 characters"
+  - "Maximum card limit (2000) reached for this deck"
+  - "Maximum 100 attributes allowed per card"
+  - "Card name cannot be empty"
 
 ### Testing
 

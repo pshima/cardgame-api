@@ -1,11 +1,12 @@
 # Card Game API
 
-A comprehensive Go/Gin API for card games with full blackjack support, player hand tracking, and multi-deck functionality.
+A comprehensive Go/Gin API for card games with full blackjack support, player hand tracking, multi-deck functionality, and custom deck creation.
 
 ## Features
 
-- **Multiple Card Games**: Blackjack, Poker, War, Go Fish
+- **Multiple Card Games**: Blackjack, Poker, War, Go Fish, Cribbage
 - **Multiple Deck Types**: Standard 52-card, Spanish 21 (48-card, no 10s)
+- **Custom Decks**: Create completely free-form custom decks with custom cards, suits, ranks, and attributes
 - **Player Management**: Add/remove players, track individual hands
 - **Blackjack Logic**: Hand value calculation, automatic dealer play, winner determination
 - **Face Up/Down Cards**: Full control over card visibility
@@ -461,6 +462,186 @@ The game continues with new deals until one player reaches 121 points:
 }
 ```
 
+## Custom Deck Creation and Management
+
+The API supports creating completely free-form custom decks with custom cards that can have any rank, suit, and attributes you want.
+
+### Step 1: Create a Custom Deck
+```bash
+curl -X POST http://localhost:8080/custom-decks \
+  -H "Content-Type: application/json" \
+  -d '{"name": "My Fantasy Deck"}'
+```
+
+**Response:**
+```json
+{
+  "id": "dffd1c1d-c0f0-4c49-994c-6c7e47ffad6f",
+  "name": "My Fantasy Deck",
+  "message": "Custom deck created successfully",
+  "created": "2025-07-29T15:40:24.662345-07:00"
+}
+```
+
+### Step 2: Add Custom Cards
+
+#### Game-Compatible Card (can be used in traditional games)
+```bash
+curl -X POST http://localhost:8080/custom-decks/dffd1c1d-c0f0-4c49-994c-6c7e47ffad6f/cards \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "9 of Hyenas",
+    "rank": 9,
+    "suit": "hyenas",
+    "attributes": {
+      "strength": "+1",
+      "luck": "-1",
+      "cursed": "true"
+    }
+  }'
+```
+
+**Response:**
+```json
+{
+  "index": 0,
+  "name": "9 of Hyenas",
+  "rank": 9,
+  "suit": "hyenas",
+  "game_compatible": true,
+  "attributes": {
+    "cursed": "true",
+    "luck": "-1",
+    "strength": "+1"
+  },
+  "message": "Card added successfully"
+}
+```
+
+#### Non-Game-Compatible Card (free-form)
+```bash
+curl -X POST http://localhost:8080/custom-decks/dffd1c1d-c0f0-4c49-994c-6c7e47ffad6f/cards \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Magic Potion",
+    "attributes": {
+      "effect": "heal 10 hp",
+      "rarity": "common"
+    }
+  }'
+```
+
+**Response:**
+```json
+{
+  "index": 1,
+  "name": "Magic Potion",
+  "rank": null,
+  "suit": "",
+  "game_compatible": false,
+  "attributes": {
+    "effect": "heal 10 hp",
+    "rarity": "common"
+  },
+  "message": "Card added successfully"
+}
+```
+
+#### Custom Suit Card
+```bash
+curl -X POST http://localhost:8080/custom-decks/dffd1c1d-c0f0-4c49-994c-6c7e47ffad6f/cards \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Ace of 4-Leaf Clovers",
+    "rank": 1,
+    "suit": "4-leaf-clovers",
+    "attributes": {
+      "luck": "+5",
+      "symbol": "🍀"
+    }
+  }'
+```
+
+### Step 3: List Custom Decks
+```bash
+curl http://localhost:8080/custom-decks
+```
+
+**Response:**
+```json
+{
+  "count": 1,
+  "decks": [
+    {
+      "id": "dffd1c1d-c0f0-4c49-994c-6c7e47ffad6f",
+      "name": "My Fantasy Deck",
+      "card_count": 3,
+      "created": "2025-07-29T15:40:24.662345-07:00",
+      "last_used": "2025-07-29T15:40:45.906827-07:00"
+    }
+  ]
+}
+```
+
+### Step 4: Get Deck with All Cards
+```bash
+curl http://localhost:8080/custom-decks/dffd1c1d-c0f0-4c49-994c-6c7e47ffad6f/cards
+```
+
+### Step 5: Get Specific Card
+```bash
+curl http://localhost:8080/custom-decks/dffd1c1d-c0f0-4c49-994c-6c7e47ffad6f/cards/0
+```
+
+### Step 6: Delete Card (Tombstone)
+```bash
+curl -X DELETE http://localhost:8080/custom-decks/dffd1c1d-c0f0-4c49-994c-6c7e47ffad6f/cards/1
+```
+
+The card is marked as deleted but remains queryable:
+```bash
+curl http://localhost:8080/custom-decks/dffd1c1d-c0f0-4c49-994c-6c7e47ffad6f/cards/1
+```
+
+**Response shows `"deleted": true`:**
+```json
+{
+  "deck_id": "dffd1c1d-c0f0-4c49-994c-6c7e47ffad6f",
+  "deck_name": "My Fantasy Deck",
+  "index": 1,
+  "name": "Magic Potion",
+  "rank": null,
+  "suit": "",
+  "game_compatible": false,
+  "attributes": {
+    "effect": "heal 10 hp",
+    "rarity": "common"
+  },
+  "deleted": true
+}
+```
+
+### Custom Deck Features
+
+- **Free-form Cards**: Create any card with any name, rank, suit, and attributes
+- **Game Compatibility**: Cards with numeric ranks and suits are automatically marked as `game_compatible: true`
+- **Custom Suits**: Use traditional suits (hearts, diamonds, clubs, spades) or create your own (hyenas, 4-leaf-clovers, etc.)
+- **Flexible Ranks**: Use numbers, strings, or leave blank
+- **Rich Attributes**: Add up to 100 custom key-value attributes per card
+- **Tombstone Deletion**: Deleted cards remain queryable but are marked as `deleted: true`
+- **Auto-indexing**: Cards get sequential indices (0, 1, 2...) for easy reference
+- **Security**: All inputs are validated and sanitized
+
+### Custom Deck Limits
+
+- **Deck Name**: 1-128 characters
+- **Cards per Deck**: Maximum 2,000 cards
+- **Card Name**: Maximum 100 characters
+- **Suit Name**: Maximum 50 characters
+- **Attributes**: Maximum 100 attributes per card
+- **Attribute Keys**: Maximum 50 characters each
+- **Attribute Values**: Maximum 200 characters each
+
 ## API Endpoints
 
 ### Game Management
@@ -507,6 +688,16 @@ The game continues with new deals until one player reaches 121 points:
 - `GET /game/:gameId/reset` - Reset deck with same configuration
 - `GET /game/:gameId/reset/:decks` - Reset with different deck count
 - `GET /game/:gameId/reset/:decks/:type` - Reset with different deck type
+
+### Custom Deck Management
+- `POST /custom-decks` - Create custom deck `{"name": "Deck Name"}`
+- `GET /custom-decks` - List all custom decks with summaries
+- `GET /custom-decks/:deckId` - Get custom deck details with all cards
+- `DELETE /custom-decks/:deckId` - Delete custom deck permanently
+- `POST /custom-decks/:deckId/cards` - Add card to deck `{"name": "Card Name", "rank": 9, "suit": "custom", "attributes": {...}}`
+- `GET /custom-decks/:deckId/cards` - List cards in deck (`?include_deleted=true` for deleted cards)
+- `GET /custom-decks/:deckId/cards/:cardIndex` - Get specific card by index
+- `DELETE /custom-decks/:deckId/cards/:cardIndex` - Delete card (tombstone - remains queryable)
 
 ## Deck Types
 

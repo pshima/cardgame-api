@@ -2,15 +2,18 @@ openapi: 3.0.3
 info:
   title: Card Game API
   description: |
-    A comprehensive Go/Gin API for card games with full blackjack support, player hand tracking, and multi-deck functionality.
+    A comprehensive Go/Gin API for card games with full blackjack support, player hand tracking, multi-deck functionality, and custom deck creation.
     
     ## Features
-    - Multiple Card Games: Blackjack, Poker, War, Go Fish
+    - Multiple Card Games: Blackjack, Poker, War, Go Fish, Cribbage
     - Multiple Deck Types: Standard 52-card, Spanish 21 (48-card, no 10s)
+    - Custom Decks: Create custom decks with completely free-form cards, custom suits, ranks, and attributes
     - Player Management: Add/remove players, track individual hands
     - Blackjack Logic: Hand value calculation, automatic dealer play, winner determination
     - Face Up/Down Cards: Full control over card visibility
-    - Card Images: Auto-generated PNG images in icon (32x48), small (64x90), and large (200x280) formats
+    - Card Images: Auto-generated PNG images in icon (32x48), small (64x90), and large (200x280) formats for standard cards
+    - Game Compatibility: Custom cards with numeric ranks and suits can be used in traditional games
+    - Tombstone Deletion: Custom cards are marked as deleted but remain queryable
     - Security: Input validation and sanitization for all parameters
     
   version: 1.0.0
@@ -42,6 +45,8 @@ tags:
     description: Card discard operations
   - name: blackjack-gameplay
     description: Blackjack-specific game flow operations
+  - name: custom-decks
+    description: Custom deck creation and management operations
 
 paths:
   /hello:
@@ -737,6 +742,269 @@ paths:
         '404':
           $ref: '#/components/responses/GameNotFound'
 
+  /custom-decks:
+    post:
+      tags:
+        - custom-decks
+      summary: Create a custom deck
+      description: Create a new custom deck with a specified name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCustomDeckRequest'
+      responses:
+        '201':
+          description: Custom deck created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateCustomDeckResponse'
+        '400':
+          description: Invalid request data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      tags:
+        - custom-decks
+      summary: List all custom decks
+      description: Retrieve a list of all custom decks with summary information
+      responses:
+        '200':
+          description: List of custom decks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomDecksListResponse'
+
+  /custom-decks/{deckId}:
+    get:
+      tags:
+        - custom-decks
+      summary: Get custom deck details
+      description: Retrieve detailed information about a specific custom deck including all cards
+      parameters:
+        - name: deckId
+          in: path
+          required: true
+          description: UUID of the custom deck
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Custom deck details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomDeckResponse'
+        '400':
+          description: Invalid deck ID format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Custom deck not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - custom-decks
+      summary: Delete custom deck
+      description: Permanently delete a custom deck and all its cards
+      parameters:
+        - name: deckId
+          in: path
+          required: true
+          description: UUID of the custom deck
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Custom deck deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Invalid deck ID format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Custom deck not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /custom-decks/{deckId}/cards:
+    post:
+      tags:
+        - custom-decks
+      summary: Add card to custom deck
+      description: Add a new custom card to the specified deck with optional rank, suit, and attributes
+      parameters:
+        - name: deckId
+          in: path
+          required: true
+          description: UUID of the custom deck
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddCustomCardRequest'
+      responses:
+        '201':
+          description: Card added successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomCardResponse'
+        '400':
+          description: Invalid request data or deck limits exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Custom deck not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      tags:
+        - custom-decks
+      summary: List cards in custom deck
+      description: Retrieve all cards in the specified custom deck
+      parameters:
+        - name: deckId
+          in: path
+          required: true
+          description: UUID of the custom deck
+          schema:
+            type: string
+            format: uuid
+        - name: include_deleted
+          in: query
+          required: false
+          description: Include deleted cards in the response
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: List of cards in the deck
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomCardsListResponse'
+        '400':
+          description: Invalid deck ID format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Custom deck not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /custom-decks/{deckId}/cards/{cardIndex}:
+    get:
+      tags:
+        - custom-decks
+      summary: Get specific custom card
+      description: Retrieve detailed information about a specific card by its index
+      parameters:
+        - name: deckId
+          in: path
+          required: true
+          description: UUID of the custom deck
+          schema:
+            type: string
+            format: uuid
+        - name: cardIndex
+          in: path
+          required: true
+          description: Index of the card in the deck
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: Custom card details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomCardDetailResponse'
+        '400':
+          description: Invalid deck ID or card index format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Custom deck or card not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - custom-decks
+      summary: Delete custom card (tombstone)
+      description: Mark a custom card as deleted (tombstone delete - card remains queryable but marked as deleted)
+      parameters:
+        - name: deckId
+          in: path
+          required: true
+          description: UUID of the custom deck
+          schema:
+            type: string
+            format: uuid
+        - name: cardIndex
+          in: path
+          required: true
+          description: Index of the card in the deck
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: Card marked as deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Invalid deck ID or card index format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Custom deck or card not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 components:
   parameters:
     GameId:
@@ -1315,6 +1583,233 @@ components:
         - dealer
         - players
         - results
+
+    # Custom Deck Schemas
+    CreateCustomDeckRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Name of the custom deck
+          minLength: 1
+          maxLength: 128
+          example: "My Fantasy Deck"
+
+    CreateCustomDeckResponse:
+      type: object
+      required:
+        - id
+        - name
+        - message
+        - created
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID of the created deck
+        name:
+          type: string
+          description: Name of the deck
+        message:
+          type: string
+          description: Success message
+        created:
+          type: string
+          format: date-time
+          description: Timestamp when the deck was created
+
+    AddCustomCardRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Name of the custom card
+          maxLength: 100
+          example: "9 of Hyenas"
+        rank:
+          oneOf:
+            - type: integer
+            - type: number
+            - type: string
+          description: Rank of the card (numeric for game compatibility, or any string/number)
+          example: 9
+        suit:
+          type: string
+          description: Suit of the card (traditional or custom)
+          maxLength: 50
+          example: "hyenas"
+        attributes:
+          type: object
+          additionalProperties:
+            type: string
+            maxLength: 200
+          description: Custom attributes for the card (max 100 attributes)
+          maxProperties: 100
+          example:
+            strength: "+1"
+            luck: "-1"
+            cursed: "true"
+
+    CustomCard:
+      type: object
+      required:
+        - index
+        - name
+        - game_compatible
+        - attributes
+        - deleted
+      properties:
+        index:
+          type: integer
+          description: Auto-assigned index of the card in the deck
+          minimum: 0
+        name:
+          type: string
+          description: Name of the custom card
+        rank:
+          oneOf:
+            - type: integer
+            - type: number
+            - type: string
+            - type: "null"
+          description: Rank of the card (null if not specified)
+        suit:
+          type: string
+          description: Suit of the card (empty string if not specified)
+        game_compatible:
+          type: boolean
+          description: Whether this card can be used in traditional card games (true if rank is numeric and suit is specified)
+        attributes:
+          type: object
+          additionalProperties:
+            type: string
+          description: Custom attributes for the card
+        deleted:
+          type: boolean
+          description: Whether the card has been tombstone deleted
+
+    CustomCardResponse:
+      allOf:
+        - $ref: '#/components/schemas/CustomCard'
+        - type: object
+          required:
+            - message
+          properties:
+            message:
+              type: string
+              description: Success message
+
+    CustomCardDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/CustomCard'
+        - type: object
+          required:
+            - deck_id
+            - deck_name
+          properties:
+            deck_id:
+              type: string
+              format: uuid
+              description: UUID of the deck containing this card
+            deck_name:
+              type: string
+              description: Name of the deck containing this card
+
+    CustomDeck:
+      type: object
+      required:
+        - id
+        - name
+        - card_count
+        - created
+        - last_used
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID of the custom deck
+        name:
+          type: string
+          description: Name of the custom deck
+        card_count:
+          type: integer
+          description: Number of active (non-deleted) cards in the deck
+          minimum: 0
+        created:
+          type: string
+          format: date-time
+          description: Timestamp when the deck was created
+        last_used:
+          type: string
+          format: date-time
+          description: Timestamp when the deck was last accessed
+
+    CustomDeckResponse:
+      allOf:
+        - $ref: '#/components/schemas/CustomDeck'
+        - type: object
+          required:
+            - cards
+          properties:
+            cards:
+              type: array
+              items:
+                $ref: '#/components/schemas/CustomCard'
+              description: Array of all active cards in the deck
+
+    CustomDecksListResponse:
+      type: object
+      required:
+        - decks
+        - count
+      properties:
+        decks:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomDeck'
+          description: Array of custom deck summaries
+        count:
+          type: integer
+          description: Total number of custom decks
+          minimum: 0
+
+    CustomCardsListResponse:
+      type: object
+      required:
+        - deck_id
+        - deck_name
+        - cards
+        - card_count
+      properties:
+        deck_id:
+          type: string
+          format: uuid
+          description: UUID of the deck
+        deck_name:
+          type: string
+          description: Name of the deck
+        cards:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomCard'
+          description: Array of cards in the deck
+        card_count:
+          type: integer
+          description: Number of cards returned
+          minimum: 0
+
+    SuccessResponse:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Success message
 
   securitySchemes: {}
 

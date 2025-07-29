@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
-This is a comprehensive Card Game API built with Go and the Gin web framework. The API provides full blackjack gameplay functionality with card images, player management, security features, and complete OpenAPI documentation.
+This is a comprehensive Card Game API built with Go and the Gin web framework. The API provides full blackjack gameplay functionality, custom deck creation, card images, player management, security features, and complete OpenAPI documentation.
 
 ## Tech Stack
 - **Language**: Go 1.24.4
@@ -16,8 +16,12 @@ This is a comprehensive Card Game API built with Go and the Gin web framework. T
 
 ## Key Features
 - **Complete Blackjack Implementation**: Full game flow with automatic dealer play
+- **Cribbage Support**: Full 2-player cribbage implementation with pegging and scoring
 - **Multiple Deck Types**: Standard (52 cards) and Spanish 21 (48 cards, no 10s)
-- **Card Images**: Auto-generated PNG images in 3 sizes (icon: 32x48, small: 64x90, large: 200x280)
+- **Custom Deck Creation**: Free-form custom decks with custom cards, suits, ranks, and attributes
+- **Card Images**: Auto-generated PNG images in 3 sizes (icon: 32x48, small: 64x90, large: 200x280) for standard cards
+- **Game Compatibility**: Custom cards with numeric ranks can be used in traditional games
+- **Tombstone Deletion**: Custom cards are marked as deleted but remain queryable
 - **Security**: Comprehensive input validation and sanitization
 - **API Documentation**: Complete OpenAPI 3.0 specification with interactive Swagger UI
 - **Concurrent Games**: Thread-safe operations supporting multiple simultaneous games
@@ -75,7 +79,7 @@ This is a comprehensive Card Game API built with Go and the Gin web framework. T
   - `small/` - 64x90 pixel card images  
   - `large/` - 200x280 pixel card images
 
-## API Endpoints (27 total)
+## API Endpoints (35 total)
 
 ### System
 - `GET /hello` - Health check endpoint
@@ -121,6 +125,16 @@ This is a comprehensive Card Game API built with Go and the Gin web framework. T
 ### Deck Types
 - `GET /deck-types` - List available deck types with specifications
 
+### Custom Deck Management
+- `POST /custom-decks` - Create custom deck with JSON body: `{"name": "Deck Name"}`
+- `GET /custom-decks` - List all custom decks with summary information
+- `GET /custom-decks/:deckId` - Get custom deck details with all cards
+- `DELETE /custom-decks/:deckId` - Delete custom deck permanently
+- `POST /custom-decks/:deckId/cards` - Add card to deck with JSON body: `{"name": "Card Name", "rank": 9, "suit": "custom", "attributes": {...}}`
+- `GET /custom-decks/:deckId/cards` - List cards in deck (query param `?include_deleted=true` for deleted cards)
+- `GET /custom-decks/:deckId/cards/:cardIndex` - Get specific card by index
+- `DELETE /custom-decks/:deckId/cards/:cardIndex` - Delete card (tombstone - remains queryable)
+
 ## Development Notes
 
 ### Server Configuration
@@ -129,6 +143,11 @@ This is a comprehensive Card Game API built with Go and the Gin web framework. T
 - Uses Gin's default middleware for logging and recovery
 - Serves static files from `./static` directory
 - CORS headers not configured (add if needed for web apps)
+- Trusted proxy configuration for production security
+
+### Environment Variables
+- `TRUSTED_PROXIES` - Comma-separated list of trusted proxy IPs (e.g., "10.0.1.100,192.168.1.0/24")
+- `GIN_MODE` - Set to "release" for production deployment
 
 ### Security Features
 - All URI parameters validated with regex patterns
@@ -137,12 +156,14 @@ This is a comprehensive Card Game API built with Go and the Gin web framework. T
 - UUID validation for game and player IDs
 - Special handling for "dealer" player ID
 - Numeric parameters have reasonable upper limits
+- Custom deck validation: deck names (1-128 chars), cards (2000 max), attributes (100 max)
 
 ### Data Models
 - **Ranks**: 1=Ace, 2-10=Number cards, 11=Jack, 12=Queen, 13=King
 - **Suits**: 0=Hearts, 1=Diamonds, 2=Clubs, 3=Spades
 - **Game Status**: waiting, in_progress, finished
 - **Blackjack Results**: blackjack, win, push, bust, lose
+- **Custom Cards**: Free-form with name, optional rank/suit, attributes, game_compatible flag, tombstone deletion
 
 ### Card Images
 - All cards include `images` object with URLs in responses
@@ -174,3 +195,7 @@ This is a comprehensive Card Game API built with Go and the Gin web framework. T
 3. **Add validation**: Update validation functions in main.go, add tests in validation_test.go
 4. **Update documentation**: Modify README.md and openapi.yaml
 5. **Add new card size**: Update generate_cards.go constants and functions
+6. **Custom deck features**: Modify CustomCard/CustomDeck structs in card.go, update CustomDeckManager methods
+
+## Best Practices
+- Always update the openapi documentation whenever the api changes

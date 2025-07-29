@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -92,22 +93,55 @@ func validateCardIndex(indexStr string) (int, bool) {
 	return index, valid
 }
 
-// getBaseURL extracts the base URL from the request
+// getTrustedProxies returns the list of trusted proxy IPs from environment or defaults
+func getTrustedProxies() []string {
+	// Check if TRUSTED_PROXIES environment variable is set
+	if envProxies := os.Getenv("TRUSTED_PROXIES"); envProxies != "" {
+		// Split comma-separated proxy IPs
+		proxies := strings.Split(envProxies, ",")
+		for i, proxy := range proxies {
+			proxies[i] = strings.TrimSpace(proxy)
+		}
+		return proxies
+	}
+	
+	// Default trusted proxies for development
+	return []string{
+		"127.0.0.1", // localhost
+		"::1",       // localhost IPv6
+		// In production, set TRUSTED_PROXIES environment variable with your actual proxy IPs
+		// Examples:
+		// - Load balancer IP: "10.0.1.100"
+		// - Private network range: "10.0.0.0/8"
+		// - Cloudflare (if using): Use Cloudflare's IP ranges
+		// - Google Cloud: Use Google's load balancer IP ranges
+	}
+}
+
+// getBaseURL extracts the base URL from the request with security considerations
 func getBaseURL(c *gin.Context) string {
 	scheme := "http"
 	if c.Request.TLS != nil {
 		scheme = "https"
 	}
 	
-	// Try to get from X-Forwarded headers first (for proxies)
-	if proto := c.GetHeader("X-Forwarded-Proto"); proto != "" {
-		scheme = proto
+	// Only trust proxy headers if the client IP is from a trusted proxy
+	clientIP := c.ClientIP()
+	
+	// Check if request is from a trusted proxy by comparing with our trusted proxy list
+	// Note: This is a simplified check. In production, you might want more sophisticated validation
+	isTrustedProxy := clientIP == "127.0.0.1" || clientIP == "::1"
+	
+	if isTrustedProxy {
+		// Only use forwarded headers from trusted proxies
+		if proto := c.GetHeader("X-Forwarded-Proto"); proto == "https" || proto == "http" {
+			scheme = proto
+		}
 	}
 	
+	// Always use the original Host header for security, don't trust X-Forwarded-Host
+	// unless you have specific requirements and trusted proxy configuration
 	host := c.Request.Host
-	if forwardedHost := c.GetHeader("X-Forwarded-Host"); forwardedHost != "" {
-		host = forwardedHost
-	}
 	
 	return fmt.Sprintf("%s://%s", scheme, host)
 }
@@ -116,6 +150,14 @@ func main() {
 	gameManager = NewGameManager()
 	customDeckManager = NewCustomDeckManager()
 	r := gin.Default()
+	
+	// Configure trusted proxies for security
+	// Get trusted proxies from environment variable or use defaults
+	trustedProxies := getTrustedProxies()
+	
+	if err := r.SetTrustedProxies(trustedProxies); err != nil {
+		panic("Failed to set trusted proxies: " + err.Error())
+	}
 	
 	// Serve static files for card images
 	r.Static("/static", "./static")
