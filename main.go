@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -10,9 +12,104 @@ import (
 
 var gameManager *GameManager
 
+// Security patterns for input validation
+var (
+	// UUID pattern for gameID and playerID validation
+	uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+	// Alphanumeric with limited special chars for pile IDs
+	pileIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,50}$`)
+	// Number pattern for numeric parameters
+	numberPattern = regexp.MustCompile(`^[0-9]+$`)
+	// Deck type pattern
+	deckTypePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,20}$`)
+	// Boolean pattern for faceUp parameter
+	boolPattern = regexp.MustCompile(`^(true|false|1|0)$`)
+)
+
+// validateUUID checks if the input is a valid UUID format
+func validateUUID(input string) bool {
+	return uuidPattern.MatchString(input)
+}
+
+// validatePlayerID checks if the input is a valid player ID (UUID or "dealer")
+func validatePlayerID(input string) bool {
+	return input == "dealer" || uuidPattern.MatchString(input)
+}
+
+// validatePileID checks if pile ID is safe
+func validatePileID(input string) bool {
+	return pileIDPattern.MatchString(input)
+}
+
+// validateNumber checks if input is a valid positive integer
+func validateNumber(input string) (int, bool) {
+	if !numberPattern.MatchString(input) {
+		return 0, false
+	}
+	num, err := strconv.Atoi(input)
+	if err != nil || num < 0 {
+		return 0, false
+	}
+	return num, true
+}
+
+// validateDeckType checks if deck type input is safe
+func validateDeckType(input string) bool {
+	return deckTypePattern.MatchString(input)
+}
+
+// validateBoolean checks if input is a valid boolean representation
+func validateBoolean(input string) bool {
+	return boolPattern.MatchString(strings.ToLower(input))
+}
+
+// sanitizeString removes potentially dangerous characters and limits length
+func sanitizeString(input string, maxLength int) string {
+	// Remove control characters and limit length
+	cleaned := strings.Map(func(r rune) rune {
+		if r < 32 || r == 127 { // Remove control characters
+			return -1
+		}
+		return r
+	}, input)
+	
+	if len(cleaned) > maxLength {
+		cleaned = cleaned[:maxLength]
+	}
+	
+	return cleaned
+}
+
+// getBaseURL extracts the base URL from the request
+func getBaseURL(c *gin.Context) string {
+	scheme := "http"
+	if c.Request.TLS != nil {
+		scheme = "https"
+	}
+	
+	// Try to get from X-Forwarded headers first (for proxies)
+	if proto := c.GetHeader("X-Forwarded-Proto"); proto != "" {
+		scheme = proto
+	}
+	
+	host := c.Request.Host
+	if forwardedHost := c.GetHeader("X-Forwarded-Host"); forwardedHost != "" {
+		host = forwardedHost
+	}
+	
+	return fmt.Sprintf("%s://%s", scheme, host)
+}
+
 func main() {
 	gameManager = NewGameManager()
 	r := gin.Default()
+	
+	// Serve static files for card images
+	r.Static("/static", "./static")
+	
+	// Serve API documentation
+	r.StaticFile("/openapi.yaml", "./openapi.yaml")
+	r.StaticFile("/api-docs", "./api-docs.html")
 
 	r.GET("/hello", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -35,6 +132,10 @@ func main() {
 	r.GET("/game/:gameId/deal/player/:playerId", dealToPlayer)
 	r.GET("/game/:gameId/deal/player/:playerId/:faceUp", dealToPlayerFaceUp)
 	r.POST("/game/:gameId/discard/:pileId", discardToCard)
+	r.POST("/game/:gameId/start", startBlackjackGame)
+	r.POST("/game/:gameId/hit/:playerId", playerHit)
+	r.POST("/game/:gameId/stand/:playerId", playerStand)
+	r.GET("/game/:gameId/results", getGameResults)
 	r.GET("/game/:gameId/reset", resetDeck)
 	r.GET("/game/:gameId/reset/:decks", resetDeckWithDecks)
 	r.GET("/game/:gameId/reset/:decks/:type", resetDeckWithType)
@@ -68,11 +169,11 @@ func createNewGame(c *gin.Context) {
 }
 
 func createNewGameWithDecks(c *gin.Context) {
-	decksStr := c.Param("decks")
-	numDecks, err := strconv.Atoi(decksStr)
-	if err != nil || numDecks <= 0 {
+	decksStr := sanitizeString(c.Param("decks"), 10)
+	numDecks, valid := validateNumber(decksStr)
+	if !valid || numDecks <= 0 || numDecks > 100 { // Reasonable upper limit
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid decks parameter",
+			"error": "Invalid decks parameter (must be 1-100)",
 		})
 		return
 	}
@@ -90,13 +191,20 @@ func createNewGameWithDecks(c *gin.Context) {
 }
 
 func createNewGameWithType(c *gin.Context) {
-	decksStr := c.Param("decks")
-	typeStr := c.Param("type")
+	decksStr := sanitizeString(c.Param("decks"), 10)
+	typeStr := sanitizeString(c.Param("type"), 20)
 	
-	numDecks, err := strconv.Atoi(decksStr)
-	if err != nil || numDecks <= 0 {
+	numDecks, valid := validateNumber(decksStr)
+	if !valid || numDecks <= 0 || numDecks > 100 {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid decks parameter",
+			"error": "Invalid decks parameter (must be 1-100)",
+		})
+		return
+	}
+	
+	if !validateDeckType(typeStr) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid deck type parameter",
 		})
 		return
 	}
@@ -116,7 +224,14 @@ func createNewGameWithType(c *gin.Context) {
 }
 
 func shuffleDeck(c *gin.Context) {
-	gameID := c.Param("gameId")
+	gameID := sanitizeString(c.Param("gameId"), 50)
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
+	
 	game, exists := gameManager.GetGame(gameID)
 	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{
@@ -136,7 +251,14 @@ func shuffleDeck(c *gin.Context) {
 }
 
 func getGameInfo(c *gin.Context) {
-	gameID := c.Param("gameId")
+	gameID := sanitizeString(c.Param("gameId"), 50)
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
+	
 	game, exists := gameManager.GetGame(gameID)
 	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{
@@ -158,7 +280,14 @@ func getGameInfo(c *gin.Context) {
 }
 
 func dealCard(c *gin.Context) {
-	gameID := c.Param("gameId")
+	gameID := sanitizeString(c.Param("gameId"), 50)
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
+	
 	game, exists := gameManager.GetGame(gameID)
 	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{
@@ -175,17 +304,29 @@ func dealCard(c *gin.Context) {
 		return
 	}
 	
+	// Default to face up for dealt cards
+	card.FaceUp = true
+	baseURL := getBaseURL(c)
+	cardWithImages := card.ToCardWithImages(baseURL)
+	
 	c.JSON(http.StatusOK, gin.H{
 		"game_id":        game.ID,
 		"deck_name":      game.Deck.Name,
-		"card":           card,
+		"card":           cardWithImages,
 		"remaining_cards": game.Deck.RemainingCards(),
 	})
 }
 
 func dealCards(c *gin.Context) {
-	gameID := c.Param("gameId")
-	countStr := c.Param("count")
+	gameID := sanitizeString(c.Param("gameId"), 50)
+	countStr := sanitizeString(c.Param("count"), 10)
+	
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
 	
 	game, exists := gameManager.GetGame(gameID)
 	if !exists {
@@ -195,10 +336,10 @@ func dealCards(c *gin.Context) {
 		return
 	}
 
-	count, err := strconv.Atoi(countStr)
-	if err != nil || count <= 0 {
+	count, valid := validateNumber(countStr)
+	if !valid || count <= 0 || count > 52 { // Reasonable upper limit
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid count parameter",
+			"error": "Invalid count parameter (must be 1-52)",
 		})
 		return
 	}
@@ -210,26 +351,36 @@ func dealCards(c *gin.Context) {
 		return
 	}
 
-	var cards []*Card
+	baseURL := getBaseURL(c)
+	var cardsWithImages []CardWithImages
 	for i := 0; i < count; i++ {
 		card := game.Deck.Deal()
 		if card == nil {
 			break
 		}
-		cards = append(cards, card)
+		// Default to face up for dealt cards
+		card.FaceUp = true
+		cardsWithImages = append(cardsWithImages, card.ToCardWithImages(baseURL))
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"game_id":        game.ID,
 		"deck_name":      game.Deck.Name,
-		"cards":          cards,
-		"cards_dealt":    len(cards),
+		"cards":          cardsWithImages,
+		"cards_dealt":    len(cardsWithImages),
 		"remaining_cards": game.Deck.RemainingCards(),
 	})
 }
 
 func resetDeck(c *gin.Context) {
-	gameID := c.Param("gameId")
+	gameID := sanitizeString(c.Param("gameId"), 50)
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
+	
 	game, exists := gameManager.GetGame(gameID)
 	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{
@@ -249,8 +400,15 @@ func resetDeck(c *gin.Context) {
 }
 
 func resetDeckWithDecks(c *gin.Context) {
-	gameID := c.Param("gameId")
-	decksStr := c.Param("decks")
+	gameID := sanitizeString(c.Param("gameId"), 50)
+	decksStr := sanitizeString(c.Param("decks"), 10)
+	
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
 	
 	game, exists := gameManager.GetGame(gameID)
 	if !exists {
@@ -260,10 +418,10 @@ func resetDeckWithDecks(c *gin.Context) {
 		return
 	}
 
-	numDecks, err := strconv.Atoi(decksStr)
-	if err != nil || numDecks <= 0 {
+	numDecks, valid := validateNumber(decksStr)
+	if !valid || numDecks <= 0 || numDecks > 100 {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid decks parameter",
+			"error": "Invalid decks parameter (must be 1-100)",
 		})
 		return
 	}
@@ -280,7 +438,14 @@ func resetDeckWithDecks(c *gin.Context) {
 }
 
 func deleteGame(c *gin.Context) {
-	gameID := c.Param("gameId")
+	gameID := sanitizeString(c.Param("gameId"), 50)
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
+	
 	deleted := gameManager.DeleteGame(gameID)
 	if !deleted {
 		c.JSON(http.StatusNotFound, gin.H{
@@ -296,9 +461,23 @@ func deleteGame(c *gin.Context) {
 }
 
 func resetDeckWithType(c *gin.Context) {
-	gameID := c.Param("gameId")
-	decksStr := c.Param("decks")
-	typeStr := c.Param("type")
+	gameID := sanitizeString(c.Param("gameId"), 50)
+	decksStr := sanitizeString(c.Param("decks"), 10)
+	typeStr := sanitizeString(c.Param("type"), 20)
+	
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
+	
+	if !validateDeckType(typeStr) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid deck type parameter",
+		})
+		return
+	}
 	
 	game, exists := gameManager.GetGame(gameID)
 	if !exists {
@@ -308,10 +487,10 @@ func resetDeckWithType(c *gin.Context) {
 		return
 	}
 
-	numDecks, err := strconv.Atoi(decksStr)
-	if err != nil || numDecks <= 0 {
+	numDecks, valid := validateNumber(decksStr)
+	if !valid || numDecks <= 0 || numDecks > 100 {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid decks parameter",
+			"error": "Invalid decks parameter (must be 1-100)",
 		})
 		return
 	}
@@ -358,20 +537,27 @@ func listGames(c *gin.Context) {
 }
 
 func createNewGameWithPlayers(c *gin.Context) {
-	decksStr := c.Param("decks")
-	typeStr := c.Param("type")
-	playersStr := c.Param("players")
+	decksStr := sanitizeString(c.Param("decks"), 10)
+	typeStr := sanitizeString(c.Param("type"), 20)
+	playersStr := sanitizeString(c.Param("players"), 10)
 	
-	numDecks, err := strconv.Atoi(decksStr)
-	if err != nil || numDecks <= 0 {
+	numDecks, valid := validateNumber(decksStr)
+	if !valid || numDecks <= 0 || numDecks > 100 {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid decks parameter",
+			"error": "Invalid decks parameter (must be 1-100)",
 		})
 		return
 	}
 	
-	maxPlayers, err := strconv.Atoi(playersStr)
-	if err != nil || maxPlayers <= 0 || maxPlayers > 10 {
+	if !validateDeckType(typeStr) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid deck type parameter",
+		})
+		return
+	}
+	
+	maxPlayers, valid := validateNumber(playersStr)
+	if !valid || maxPlayers <= 0 || maxPlayers > 10 {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Invalid players parameter (must be 1-10)",
 		})
@@ -395,7 +581,14 @@ func createNewGameWithPlayers(c *gin.Context) {
 }
 
 func getGameState(c *gin.Context) {
-	gameID := c.Param("gameId")
+	gameID := sanitizeString(c.Param("gameId"), 50)
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
+	
 	game, exists := gameManager.GetGame(gameID)
 	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{
@@ -414,16 +607,58 @@ func getGameState(c *gin.Context) {
 		})
 	}
 
+	// Add hand values for blackjack
+	baseURL := getBaseURL(c)
+	var playersWithValues []gin.H
+	for _, player := range game.Players {
+		handValue, hasBlackjack := player.BlackjackHandValue()
+		
+		// Convert cards to include images
+		var handWithImages []CardWithImages
+		for _, card := range player.Hand {
+			handWithImages = append(handWithImages, ToCardWithImagesPtr(card, baseURL))
+		}
+		
+		playersWithValues = append(playersWithValues, gin.H{
+			"id":            player.ID,
+			"name":          player.Name,
+			"hand":          handWithImages,
+			"hand_size":     player.HandSize(),
+			"hand_value":    handValue,
+			"has_blackjack": hasBlackjack,
+			"is_busted":     player.IsBusted(),
+		})
+	}
+	
+	// Convert dealer cards with images
+	var dealerHandWithImages []CardWithImages
+	for _, card := range game.Dealer.Hand {
+		dealerHandWithImages = append(dealerHandWithImages, ToCardWithImagesPtr(card, baseURL))
+	}
+	
+	dealerValue, dealerBlackjack := game.Dealer.BlackjackHandValue()
+	dealerInfo := gin.H{
+		"id":            game.Dealer.ID,
+		"name":          game.Dealer.Name,
+		"hand":          dealerHandWithImages,
+		"hand_size":     game.Dealer.HandSize(),
+		"hand_value":    dealerValue,
+		"has_blackjack": dealerBlackjack,
+		"is_busted":     game.Dealer.IsBusted(),
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"game_id":         game.ID,
 		"game_type":       game.GameType.String(),
+		"status":          game.Status.String(),
+		"current_player":  game.CurrentPlayer,
 		"deck_name":       game.Deck.Name,
 		"deck_type":       game.Deck.DeckType.String(),
 		"remaining_cards": game.Deck.RemainingCards(),
 		"max_players":     game.MaxPlayers,
 		"current_players": len(game.Players),
-		"players":         game.Players,
-		"dealer":          game.Dealer,
+		"players":         playersWithValues,
+		"dealer":          dealerInfo,
 		"discard_piles":   discardInfo,
 		"created":         game.Created,
 		"last_used":       game.LastUsed,
@@ -431,7 +666,14 @@ func getGameState(c *gin.Context) {
 }
 
 func addPlayer(c *gin.Context) {
-	gameID := c.Param("gameId")
+	gameID := sanitizeString(c.Param("gameId"), 50)
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
+	
 	game, exists := gameManager.GetGame(gameID)
 	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{
@@ -447,6 +689,15 @@ func addPlayer(c *gin.Context) {
 	if err := c.ShouldBindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Invalid request body",
+		})
+		return
+	}
+	
+	// Sanitize and validate player name
+	request.Name = sanitizeString(request.Name, 50)
+	if len(strings.TrimSpace(request.Name)) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Player name cannot be empty",
 		})
 		return
 	}
@@ -467,8 +718,22 @@ func addPlayer(c *gin.Context) {
 }
 
 func removePlayer(c *gin.Context) {
-	gameID := c.Param("gameId")
-	playerID := c.Param("playerId")
+	gameID := sanitizeString(c.Param("gameId"), 50)
+	playerID := sanitizeString(c.Param("playerId"), 50)
+	
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
+	
+	if !validatePlayerID(playerID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid player ID format",
+		})
+		return
+	}
 	
 	game, exists := gameManager.GetGame(gameID)
 	if !exists {
@@ -494,8 +759,22 @@ func removePlayer(c *gin.Context) {
 }
 
 func dealToPlayer(c *gin.Context) {
-	gameID := c.Param("gameId")
-	playerID := c.Param("playerId")
+	gameID := sanitizeString(c.Param("gameId"), 50)
+	playerID := sanitizeString(c.Param("playerId"), 50)
+	
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
+	
+	if !validatePlayerID(playerID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid player ID format",
+		})
+		return
+	}
 	
 	game, exists := gameManager.GetGame(gameID)
 	if !exists {
@@ -513,12 +792,15 @@ func dealToPlayer(c *gin.Context) {
 		return
 	}
 
+	baseURL := getBaseURL(c)
+	cardWithImages := ToCardWithImagesPtr(card, baseURL)
+	
 	player := game.GetPlayer(playerID)
 	c.JSON(http.StatusOK, gin.H{
 		"game_id":         game.ID,
 		"player_id":       playerID,
 		"player_name":     player.Name,
-		"card":            card,
+		"card":            cardWithImages,
 		"hand_size":       player.HandSize(),
 		"remaining_cards": game.Deck.RemainingCards(),
 		"message":         "Card dealt to " + player.Name,
@@ -526,9 +808,30 @@ func dealToPlayer(c *gin.Context) {
 }
 
 func dealToPlayerFaceUp(c *gin.Context) {
-	gameID := c.Param("gameId")
-	playerID := c.Param("playerId")
-	faceUpStr := c.Param("faceUp")
+	gameID := sanitizeString(c.Param("gameId"), 50)
+	playerID := sanitizeString(c.Param("playerId"), 50)
+	faceUpStr := sanitizeString(c.Param("faceUp"), 10)
+	
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
+	
+	if !validatePlayerID(playerID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid player ID format",
+		})
+		return
+	}
+	
+	if !validateBoolean(faceUpStr) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid faceUp parameter (must be true/false/1/0)",
+		})
+		return
+	}
 	
 	game, exists := gameManager.GetGame(gameID)
 	if !exists {
@@ -548,12 +851,15 @@ func dealToPlayerFaceUp(c *gin.Context) {
 		return
 	}
 
+	baseURL := getBaseURL(c)
+	cardWithImages := ToCardWithImagesPtr(card, baseURL)
+	
 	player := game.GetPlayer(playerID)
 	c.JSON(http.StatusOK, gin.H{
 		"game_id":         game.ID,
 		"player_id":       playerID,
 		"player_name":     player.Name,
-		"card":            card,
+		"card":            cardWithImages,
 		"face_up":         faceUp,
 		"hand_size":       player.HandSize(),
 		"remaining_cards": game.Deck.RemainingCards(),
@@ -562,8 +868,22 @@ func dealToPlayerFaceUp(c *gin.Context) {
 }
 
 func discardToCard(c *gin.Context) {
-	gameID := c.Param("gameId")
-	pileID := c.Param("pileId")
+	gameID := sanitizeString(c.Param("gameId"), 50)
+	pileID := sanitizeString(c.Param("pileId"), 50)
+	
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
+	
+	if !validatePileID(pileID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid pile ID format",
+		})
+		return
+	}
 	
 	game, exists := gameManager.GetGame(gameID)
 	if !exists {
@@ -584,10 +904,19 @@ func discardToCard(c *gin.Context) {
 		})
 		return
 	}
-
-	if request.CardIndex < 0 {
+	
+	// Sanitize and validate player ID from request body
+	request.PlayerID = sanitizeString(request.PlayerID, 50)
+	if !validatePlayerID(request.PlayerID) {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid card index",
+			"error": "Invalid player ID format in request body",
+		})
+		return
+	}
+
+	if request.CardIndex < 0 || request.CardIndex >= 52 { // Reasonable upper limit
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid card index (must be 0-51)",
 		})
 		return
 	}
@@ -617,16 +946,194 @@ func discardToCard(c *gin.Context) {
 	}
 
 	pile.AddCard(card)
+	
+	baseURL := getBaseURL(c)
+	cardWithImages := ToCardWithImagesPtr(card, baseURL)
 
 	c.JSON(http.StatusOK, gin.H{
 		"game_id":       game.ID,
 		"player_id":     request.PlayerID,
 		"player_name":   player.Name,
-		"card":          card,
+		"card":          cardWithImages,
 		"pile_id":       pileID,
 		"pile_name":     pile.Name,
 		"pile_size":     pile.Size(),
 		"hand_size":     player.HandSize(),
 		"message":       "Card discarded to " + pile.Name,
+	})
+}
+
+func startBlackjackGame(c *gin.Context) {
+	gameID := sanitizeString(c.Param("gameId"), 50)
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
+	
+	game, exists := gameManager.GetGame(gameID)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Game not found",
+		})
+		return
+	}
+
+	err := game.StartBlackjackGame()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"game_id": game.ID,
+		"status":  game.Status.String(),
+		"message": "Blackjack game started",
+		"current_player": game.CurrentPlayer,
+	})
+}
+
+func playerHit(c *gin.Context) {
+	gameID := sanitizeString(c.Param("gameId"), 50)
+	playerID := sanitizeString(c.Param("playerId"), 50)
+	
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
+	
+	if !validatePlayerID(playerID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid player ID format",
+		})
+		return
+	}
+	
+	game, exists := gameManager.GetGame(gameID)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Game not found",
+		})
+		return
+	}
+
+	err := game.PlayerHit(playerID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	player := game.GetPlayer(playerID)
+	handValue, hasBlackjack := player.BlackjackHandValue()
+	isBusted := player.IsBusted()
+
+	c.JSON(http.StatusOK, gin.H{
+		"game_id":      game.ID,
+		"player_id":    playerID,
+		"player_name":  player.Name,
+		"hand_value":   handValue,
+		"hand_size":    player.HandSize(),
+		"has_blackjack": hasBlackjack,
+		"is_busted":    isBusted,
+		"message":      "Card dealt to " + player.Name,
+	})
+}
+
+func playerStand(c *gin.Context) {
+	gameID := sanitizeString(c.Param("gameId"), 50)
+	playerID := sanitizeString(c.Param("playerId"), 50)
+	
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
+	
+	if !validatePlayerID(playerID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid player ID format",
+		})
+		return
+	}
+	
+	game, exists := gameManager.GetGame(gameID)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Game not found",
+		})
+		return
+	}
+
+	err := game.PlayerStand(playerID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	player := game.GetPlayer(playerID)
+	c.JSON(http.StatusOK, gin.H{
+		"game_id":        game.ID,
+		"player_id":      playerID,
+		"player_name":    player.Name,
+		"status":         game.Status.String(),
+		"current_player": game.CurrentPlayer,
+		"message":        player.Name + " stands",
+	})
+}
+
+func getGameResults(c *gin.Context) {
+	gameID := sanitizeString(c.Param("gameId"), 50)
+	if !validateUUID(gameID) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid game ID format",
+		})
+		return
+	}
+	
+	game, exists := gameManager.GetGame(gameID)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Game not found",
+		})
+		return
+	}
+
+	results := game.GetGameResult()
+	dealerValue, dealerBlackjack := game.Dealer.BlackjackHandValue()
+
+	// Add player details to results
+	playerResults := make([]gin.H, 0)
+	for _, player := range game.Players {
+		playerValue, playerBlackjack := player.BlackjackHandValue()
+		playerResults = append(playerResults, gin.H{
+			"player_id":     player.ID,
+			"player_name":   player.Name,
+			"hand_value":    playerValue,
+			"has_blackjack": playerBlackjack,
+			"is_busted":     player.IsBusted(),
+			"result":        results[player.ID],
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"game_id": game.ID,
+		"status":  game.Status.String(),
+		"dealer": gin.H{
+			"hand_value":    dealerValue,
+			"has_blackjack": dealerBlackjack,
+			"is_busted":     game.Dealer.IsBusted(),
+		},
+		"players": playerResults,
+		"results": results,
 	})
 }

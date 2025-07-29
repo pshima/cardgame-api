@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Card Image Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #2d7d46;
+            padding: 20px;
+        }
+        .card-section {
+            background: white;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .card-container {
+            text-align: center;
+        }
+        .card-container img {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .card-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .size-section {
+            margin-bottom: 40px;
+        }
+        .test-cards {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        .test-card {
+            text-align: center;
+        }
+        .test-card img {
+            border: 2px solid #333;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Card Game API - Card Image Test</h1>
+    
+    <div class="card-section">
+        <h2>Number Cards Test (Correct Symbol Count)</h2>
+        <p>Each number card should display the correct number of suit symbols:</p>
+        
+        <div class="test-cards">
+            <div class="test-card">
+                <img src="static/cards/large/2_0.png" alt="2 of Hearts">
+                <div class="card-label">2 of Hearts<br>(2 symbols)</div>
+            </div>
+            <div class="test-card">
+                <img src="static/cards/large/5_1.png" alt="5 of Diamonds">
+                <div class="card-label">5 of Diamonds<br>(5 symbols)</div>
+            </div>
+            <div class="test-card">
+                <img src="static/cards/large/7_2.png" alt="7 of Clubs">
+                <div class="card-label">7 of Clubs<br>(7 symbols)</div>
+            </div>
+            <div class="test-card">
+                <img src="static/cards/large/9_3.png" alt="9 of Spades">
+                <div class="card-label">9 of Spades<br>(9 symbols)</div>
+            </div>
+            <div class="test-card">
+                <img src="static/cards/large/10_0.png" alt="10 of Hearts">
+                <div class="card-label">10 of Hearts<br>(10 symbols)</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card-section">
+        <h2>Face Cards Test</h2>
+        <p>Face cards should show rank letter in center with clear corner indicators:</p>
+        
+        <h3>Jacks</h3>
+        <div class="test-cards">
+            <div class="test-card">
+                <img src="static/cards/large/11_0.png" alt="Jack of Hearts">
+                <div class="card-label">Jack of Hearts</div>
+            </div>
+            <div class="test-card">
+                <img src="static/cards/large/11_1.png" alt="Jack of Diamonds">
+                <div class="card-label">Jack of Diamonds</div>
+            </div>
+            <div class="test-card">
+                <img src="static/cards/large/11_2.png" alt="Jack of Clubs">
+                <div class="card-label">Jack of Clubs</div>
+            </div>
+            <div class="test-card">
+                <img src="static/cards/large/11_3.png" alt="Jack of Spades">
+                <div class="card-label">Jack of Spades</div>
+            </div>
+        </div>
+        
+        <h3>Queens</h3>
+        <div class="test-cards">
+            <div class="test-card">
+                <img src="static/cards/large/12_0.png" alt="Queen of Hearts">
+                <div class="card-label">Queen of Hearts</div>
+            </div>
+            <div class="test-card">
+                <img src="static/cards/large/12_1.png" alt="Queen of Diamonds">
+                <div class="card-label">Queen of Diamonds</div>
+            </div>
+            <div class="test-card">
+                <img src="static/cards/large/12_2.png" alt="Queen of Clubs">
+                <div class="card-label">Queen of Clubs</div>
+            </div>
+            <div class="test-card">
+                <img src="static/cards/large/12_3.png" alt="Queen of Spades">
+                <div class="card-label">Queen of Spades</div>
+            </div>
+        </div>
+        
+        <h3>Kings</h3>
+        <div class="test-cards">
+            <div class="test-card">
+                <img src="static/cards/large/13_0.png" alt="King of Hearts">
+                <div class="card-label">King of Hearts</div>
+            </div>
+            <div class="test-card">
+                <img src="static/cards/large/13_1.png" alt="King of Diamonds">
+                <div class="card-label">King of Diamonds</div>
+            </div>
+            <div class="test-card">
+                <img src="static/cards/large/13_2.png" alt="King of Clubs">
+                <div class="card-label">King of Clubs</div>
+            </div>
+            <div class="test-card">
+                <img src="static/cards/large/13_3.png" alt="King of Spades">
+                <div class="card-label">King of Spades</div>
+            </div>
+        </div>
+        
+        <h3>Ace</h3>
+        <div class="test-cards">
+            <div class="test-card">
+                <img src="static/cards/large/1_3.png" alt="Ace of Spades">
+                <div class="card-label">Ace of Spades</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card-section">
+        <h2>Size Comparison</h2>
+        <p>Same card in three different sizes:</p>
+        
+        <div class="test-cards">
+            <div class="test-card">
+                <img src="static/cards/icon/7_0.png" alt="7 of Hearts Icon">
+                <div class="card-label">Icon (32x48)</div>
+            </div>
+            <div class="test-card">
+                <img src="static/cards/small/7_0.png" alt="7 of Hearts Small">
+                <div class="card-label">Small (64x90)</div>
+            </div>
+            <div class="test-card">
+                <img src="static/cards/large/7_0.png" alt="7 of Hearts Large">
+                <div class="card-label">Large (200x280)</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card-section">
+        <h2>Card Back</h2>
+        <div class="test-cards">
+            <div class="test-card">
+                <img src="static/cards/large/back.png" alt="Card Back">
+                <div class="card-label">Card Back</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Simple server check
+        fetch('/hello')
+            .then(response => response.json())
+            .then(data => {
+                console.log('API Server is running:', data);
+            })
+            .catch(error => {
+                console.error('Note: Start the API server with "go run ." to test with live API');
+            });
+    </script>
+</body>
+</html>

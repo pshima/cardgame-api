@@ -160,12 +160,71 @@ type Card struct {
 	FaceUp bool `json:"face_up"`
 }
 
+// CardWithImages extends Card with image URLs
+type CardWithImages struct {
+	Rank   Rank              `json:"rank"`
+	Suit   Suit              `json:"suit"`
+	FaceUp bool              `json:"face_up"`
+	Images map[string]string `json:"images,omitempty"`
+}
+
 func (c Card) String() string {
 	return fmt.Sprintf("%s of %s", c.Rank, c.Suit)
 }
 
 func (c Card) Value() int {
 	return int(c.Rank)
+}
+
+func (c Card) BlackjackValue() int {
+	switch c.Rank {
+	case Jack, Queen, King:
+		return 10
+	case Ace:
+		return 11 // Will be handled as 1 or 11 in hand calculation
+	default:
+		return int(c.Rank)
+	}
+}
+
+// ToCardWithImages converts a Card to CardWithImages with image URLs
+func (c Card) ToCardWithImages(baseURL string) CardWithImages {
+	if baseURL == "" {
+		baseURL = "http://localhost:8080"
+	}
+	
+	var images map[string]string
+	if c.FaceUp {
+		// Generate filename: rank_suit (e.g., "1_0" for Ace of Hearts)
+		filename := fmt.Sprintf("%d_%d", int(c.Rank), int(c.Suit))
+		images = map[string]string{
+			"icon":  fmt.Sprintf("%s/static/cards/icon/%s.png", baseURL, filename),
+			"small": fmt.Sprintf("%s/static/cards/small/%s.png", baseURL, filename),
+			"large": fmt.Sprintf("%s/static/cards/large/%s.png", baseURL, filename),
+		}
+	} else {
+		// Card back images
+		images = map[string]string{
+			"icon":  fmt.Sprintf("%s/static/cards/icon/back.png", baseURL),
+			"small": fmt.Sprintf("%s/static/cards/small/back.png", baseURL),
+			"large": fmt.Sprintf("%s/static/cards/large/back.png", baseURL),
+		}
+	}
+	
+	return CardWithImages{
+		Rank:   c.Rank,
+		Suit:   c.Suit,
+		FaceUp: c.FaceUp,
+		Images: images,
+	}
+}
+
+// ToCardWithImagesPtr converts a *Card to CardWithImages
+func ToCardWithImagesPtr(c *Card, baseURL string) CardWithImages {
+	if c == nil {
+		return CardWithImages{}
+	}
+	return c.ToCardWithImages(baseURL)
 }
 
 func generateDeckName() string {
@@ -296,6 +355,40 @@ func (p *Player) ClearHand() []*Card {
 	return cards
 }
 
+func (p *Player) BlackjackHandValue() (int, bool) {
+	total := 0
+	aces := 0
+	
+	for _, card := range p.Hand {
+		value := card.BlackjackValue()
+		if card.Rank == Ace {
+			aces++
+		}
+		total += value
+	}
+	
+	// Adjust for aces (convert from 11 to 1 if needed)
+	for aces > 0 && total > 21 {
+		total -= 10
+		aces--
+	}
+	
+	// Check for blackjack (21 with exactly 2 cards)
+	blackjack := total == 21 && len(p.Hand) == 2
+	
+	return total, blackjack
+}
+
+func (p *Player) IsBusted() bool {
+	value, _ := p.BlackjackHandValue()
+	return value > 21
+}
+
+func (p *Player) HasBlackjack() bool {
+	_, blackjack := p.BlackjackHandValue()
+	return blackjack
+}
+
 type DiscardPile struct {
 	ID    string  `json:"id"`
 	Name  string  `json:"name"`
@@ -336,14 +429,37 @@ func (dp *DiscardPile) Clear() []*Card {
 	return cards
 }
 
+type GameStatus int
+
+const (
+	GameWaiting GameStatus = iota
+	GameInProgress
+	GameFinished
+)
+
+func (gs GameStatus) String() string {
+	switch gs {
+	case GameWaiting:
+		return "waiting"
+	case GameInProgress:
+		return "in_progress"
+	case GameFinished:
+		return "finished"
+	default:
+		return "waiting"
+	}
+}
+
 type Game struct {
 	ID           string                  `json:"id"`
 	GameType     GameType                `json:"game_type"`
+	Status       GameStatus              `json:"status"`
 	Deck         *Deck                   `json:"deck"`
 	Players      []*Player               `json:"players"`
 	Dealer       *Player                 `json:"dealer"`
 	DiscardPiles map[string]*DiscardPile `json:"discard_piles"`
 	MaxPlayers   int                     `json:"max_players"`
+	CurrentPlayer int                    `json:"current_player"`
 	Created      time.Time               `json:"created"`
 	LastUsed     time.Time               `json:"last_used"`
 }
@@ -358,15 +474,17 @@ func NewCustomGame(numDecks int, deckType DeckType) *Game {
 
 func NewGameWithType(numDecks int, deckType DeckType, gameType GameType, maxPlayers int) *Game {
 	game := &Game{
-		ID:           uuid.New().String(),
-		GameType:     gameType,
-		Deck:         NewCustomDeck(numDecks, deckType),
-		Players:      []*Player{},
-		Dealer:       &Player{ID: "dealer", Name: "Dealer", Hand: []*Card{}},
-		DiscardPiles: make(map[string]*DiscardPile),
-		MaxPlayers:   maxPlayers,
-		Created:      time.Now(),
-		LastUsed:     time.Now(),
+		ID:            uuid.New().String(),
+		GameType:      gameType,
+		Status:        GameWaiting,
+		Deck:          NewCustomDeck(numDecks, deckType),
+		Players:       []*Player{},
+		Dealer:        &Player{ID: "dealer", Name: "Dealer", Hand: []*Card{}},
+		DiscardPiles:  make(map[string]*DiscardPile),
+		MaxPlayers:    maxPlayers,
+		CurrentPlayer: 0,
+		Created:       time.Now(),
+		LastUsed:      time.Now(),
 	}
 	
 	// Create a default discard pile
@@ -452,6 +570,127 @@ func (g *Game) AddDiscardPile(id, name string) *DiscardPile {
 
 func (g *Game) GetDiscardPile(id string) *DiscardPile {
 	return g.DiscardPiles[id]
+}
+
+func (g *Game) StartBlackjackGame() error {
+	if len(g.Players) == 0 {
+		return fmt.Errorf("no players in game")
+	}
+	
+	g.Status = GameInProgress
+	g.CurrentPlayer = 0
+	
+	// Deal initial two cards to each player and dealer
+	for i := 0; i < 2; i++ {
+		// Deal to players
+		for _, player := range g.Players {
+			card := g.DealToPlayer(player.ID, true) // Face up for players
+			if card == nil {
+				return fmt.Errorf("not enough cards in deck")
+			}
+		}
+		
+		// Deal to dealer (first card face down, second face up)
+		faceUp := i == 1
+		card := g.DealToPlayer("dealer", faceUp)
+		if card == nil {
+			return fmt.Errorf("not enough cards in deck")
+		}
+	}
+	
+	return nil
+}
+
+func (g *Game) PlayerHit(playerID string) error {
+	player := g.GetPlayer(playerID)
+	if player == nil {
+		return fmt.Errorf("player not found")
+	}
+	
+	if g.Status != GameInProgress {
+		return fmt.Errorf("game is not in progress")
+	}
+	
+	card := g.DealToPlayer(playerID, true)
+	if card == nil {
+		return fmt.Errorf("no cards remaining in deck")
+	}
+	
+	return nil
+}
+
+func (g *Game) PlayerStand(playerID string) error {
+	player := g.GetPlayer(playerID)
+	if player == nil {
+		return fmt.Errorf("player not found")
+	}
+	
+	if g.Status != GameInProgress {
+		return fmt.Errorf("game is not in progress")
+	}
+	
+	// Move to next player or dealer
+	g.CurrentPlayer++
+	if g.CurrentPlayer >= len(g.Players) {
+		// All players finished, play dealer
+		return g.PlayDealer()
+	}
+	
+	return nil
+}
+
+func (g *Game) PlayDealer() error {
+	// Reveal dealer's hole card
+	if len(g.Dealer.Hand) > 0 {
+		g.Dealer.Hand[0].FaceUp = true
+	}
+	
+	// Dealer hits on 16 or less, stands on 17 or more
+	for {
+		value, _ := g.Dealer.BlackjackHandValue()
+		if value >= 17 {
+			break
+		}
+		
+		card := g.DealToPlayer("dealer", true)
+		if card == nil {
+			break
+		}
+	}
+	
+	g.Status = GameFinished
+	return nil
+}
+
+func (g *Game) GetGameResult() map[string]string {
+	if g.Status != GameFinished {
+		return map[string]string{"status": "game not finished"}
+	}
+	
+	results := make(map[string]string)
+	dealerValue, dealerBlackjack := g.Dealer.BlackjackHandValue()
+	dealerBusted := g.Dealer.IsBusted()
+	
+	for _, player := range g.Players {
+		playerValue, playerBlackjack := player.BlackjackHandValue()
+		playerBusted := player.IsBusted()
+		
+		if playerBusted {
+			results[player.ID] = "bust"
+		} else if playerBlackjack && !dealerBlackjack {
+			results[player.ID] = "blackjack"
+		} else if dealerBusted {
+			results[player.ID] = "win"
+		} else if playerValue > dealerValue {
+			results[player.ID] = "win"
+		} else if playerValue == dealerValue {
+			results[player.ID] = "push"
+		} else {
+			results[player.ID] = "lose"
+		}
+	}
+	
+	return results
 }
 
 type GameManager struct {

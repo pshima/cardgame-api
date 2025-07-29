@@ -1,0 +1,1321 @@
+openapi: 3.0.3
+info:
+  title: Card Game API
+  description: |
+    A comprehensive Go/Gin API for card games with full blackjack support, player hand tracking, and multi-deck functionality.
+    
+    ## Features
+    - Multiple Card Games: Blackjack, Poker, War, Go Fish
+    - Multiple Deck Types: Standard 52-card, Spanish 21 (48-card, no 10s)
+    - Player Management: Add/remove players, track individual hands
+    - Blackjack Logic: Hand value calculation, automatic dealer play, winner determination
+    - Face Up/Down Cards: Full control over card visibility
+    - Card Images: Auto-generated PNG images in icon (32x48), small (64x90), and large (200x280) formats
+    - Security: Input validation and sanitization for all parameters
+    
+  version: 1.0.0
+  contact:
+    name: Card Game API
+    url: https://github.com/peteshima/cardgame-api
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Development server
+
+tags:
+  - name: system
+    description: System health and information
+  - name: deck-types
+    description: Available deck type information
+  - name: game-management
+    description: Game creation, deletion, and listing operations
+  - name: game-state
+    description: Game state retrieval and deck operations
+  - name: player-management
+    description: Player addition and removal
+  - name: card-dealing
+    description: Manual card dealing operations
+  - name: discard-operations
+    description: Card discard operations
+  - name: blackjack-gameplay
+    description: Blackjack-specific game flow operations
+
+paths:
+  /hello:
+    get:
+      tags:
+        - system
+      summary: Health check endpoint
+      description: Returns a simple hello message to verify the API is running
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Hello, World!"
+
+  /deck-types:
+    get:
+      tags:
+        - deck-types
+      summary: List available deck types
+      description: Returns all supported deck types with their specifications
+      responses:
+        '200':
+          description: List of available deck types
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deck_types:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DeckType'
+                  count:
+                    type: integer
+                    example: 2
+
+  /game/new:
+    get:
+      tags:
+        - game-management
+      summary: Create new game with default settings
+      description: Creates a new blackjack game with 1 standard deck and max 6 players
+      responses:
+        '200':
+          description: Game created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameCreationResponse'
+
+  /game/new/{decks}:
+    get:
+      tags:
+        - game-management
+      summary: Create new game with specified number of decks
+      description: Creates a new blackjack game with specified number of standard decks
+      parameters:
+        - name: decks
+          in: path
+          required: true
+          description: Number of decks to use (1-100)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            example: 2
+      responses:
+        '200':
+          description: Game created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameCreationResponse'
+        '400':
+          description: Invalid decks parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /game/new/{decks}/{type}:
+    get:
+      tags:
+        - game-management
+      summary: Create new game with specified decks and type
+      description: Creates a new blackjack game with specified number of decks and deck type
+      parameters:
+        - name: decks
+          in: path
+          required: true
+          description: Number of decks to use (1-100)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: type
+          in: path
+          required: true
+          description: Type of deck to use
+          schema:
+            type: string
+            enum: [standard, spanish21]
+            example: standard
+      responses:
+        '200':
+          description: Game created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameCreationResponse'
+        '400':
+          description: Invalid parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /game/new/{decks}/{type}/{players}:
+    get:
+      tags:
+        - game-management
+      summary: Create new game with all specifications
+      description: Creates a new blackjack game with specified decks, type, and max players
+      parameters:
+        - name: decks
+          in: path
+          required: true
+          description: Number of decks to use (1-100)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: type
+          in: path
+          required: true
+          description: Type of deck to use
+          schema:
+            type: string
+            enum: [standard, spanish21]
+        - name: players
+          in: path
+          required: true
+          description: Maximum number of players (1-10)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
+            example: 4
+      responses:
+        '200':
+          description: Game created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameCreationWithPlayersResponse'
+        '400':
+          description: Invalid parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /games:
+    get:
+      tags:
+        - game-management
+      summary: List all active games
+      description: Returns a list of all currently active game IDs
+      responses:
+        '200':
+          description: List of active games
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  games:
+                    type: array
+                    items:
+                      type: string
+                      format: uuid
+                  game_count:
+                    type: integer
+
+  /game/{gameId}:
+    get:
+      tags:
+        - game-state
+      summary: Get basic game information
+      description: Returns basic information about a specific game
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Game information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameInfoResponse'
+        '400':
+          $ref: '#/components/responses/InvalidGameId'
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+    delete:
+      tags:
+        - game-management
+      summary: Delete a game
+      description: Removes a game from the system
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Game deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Game deleted successfully"
+                  game_id:
+                    type: string
+                    format: uuid
+        '400':
+          $ref: '#/components/responses/InvalidGameId'
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+
+  /game/{gameId}/state:
+    get:
+      tags:
+        - game-state
+      summary: Get complete game state
+      description: Returns complete game state including all player hands with blackjack values and card images
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Complete game state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameStateResponse'
+        '400':
+          $ref: '#/components/responses/InvalidGameId'
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+
+  /game/{gameId}/shuffle:
+    get:
+      tags:
+        - game-state
+      summary: Shuffle the deck
+      description: Shuffles the current deck in the game
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Deck shuffled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeckOperationResponse'
+        '400':
+          $ref: '#/components/responses/InvalidGameId'
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+
+  /game/{gameId}/reset:
+    get:
+      tags:
+        - game-state
+      summary: Reset deck to original state
+      description: Resets the deck to its original undealt state
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Deck reset
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeckOperationResponse'
+        '400':
+          $ref: '#/components/responses/InvalidGameId'
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+
+  /game/{gameId}/reset/{decks}:
+    get:
+      tags:
+        - game-state
+      summary: Reset deck with different number of decks
+      description: Resets the deck with a different number of decks
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+        - name: decks
+          in: path
+          required: true
+          description: New number of decks (1-100)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: Deck reset with new deck count
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeckResetResponse'
+        '400':
+          $ref: '#/components/responses/InvalidParameter'
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+
+  /game/{gameId}/reset/{decks}/{type}:
+    get:
+      tags:
+        - game-state
+      summary: Reset deck with different configuration
+      description: Resets the deck with different number of decks and deck type
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+        - name: decks
+          in: path
+          required: true
+          description: New number of decks (1-100)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: type
+          in: path
+          required: true
+          description: New deck type
+          schema:
+            type: string
+            enum: [standard, spanish21]
+      responses:
+        '200':
+          description: Deck reset with new configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeckResetResponse'
+        '400':
+          $ref: '#/components/responses/InvalidParameter'
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+
+  /game/{gameId}/players:
+    post:
+      tags:
+        - player-management
+      summary: Add a player to the game
+      description: Adds a new player to the specified game
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  maxLength: 50
+                  example: "Alice"
+              required:
+                - name
+      responses:
+        '200':
+          description: Player added successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayerAddedResponse'
+        '400':
+          description: Invalid request or game is full
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+
+  /game/{gameId}/players/{playerId}:
+    delete:
+      tags:
+        - player-management
+      summary: Remove a player from the game
+      description: Removes a player from the specified game
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+        - $ref: '#/components/parameters/PlayerId'
+      responses:
+        '200':
+          description: Player removed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  game_id:
+                    type: string
+                    format: uuid
+                  player_id:
+                    type: string
+                    format: uuid
+                  message:
+                    type: string
+                    example: "Player removed successfully"
+        '400':
+          $ref: '#/components/responses/InvalidParameter'
+        '404':
+          description: Game or player not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /game/{gameId}/deal:
+    get:
+      tags:
+        - card-dealing
+      summary: Deal one card from deck
+      description: Deals a single card from the deck (face up by default)
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Card dealt successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SingleCardResponse'
+        '400':
+          description: No cards remaining or invalid game ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+
+  /game/{gameId}/deal/{count}:
+    get:
+      tags:
+        - card-dealing
+      summary: Deal multiple cards from deck
+      description: Deals multiple cards from the deck (face up by default)
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+        - name: count
+          in: path
+          required: true
+          description: Number of cards to deal (1-52)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 52
+      responses:
+        '200':
+          description: Cards dealt successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MultipleCardsResponse'
+        '400':
+          $ref: '#/components/responses/InvalidParameter'
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+
+  /game/{gameId}/deal/player/{playerId}:
+    get:
+      tags:
+        - card-dealing
+      summary: Deal card to specific player (face down)
+      description: Deals a card to a specific player (face down by default)
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+        - $ref: '#/components/parameters/PlayerId'
+      responses:
+        '200':
+          description: Card dealt to player
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayerCardResponse'
+        '400':
+          $ref: '#/components/responses/InvalidParameter'
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+
+  /game/{gameId}/deal/player/{playerId}/{faceUp}:
+    get:
+      tags:
+        - card-dealing
+      summary: Deal card to player with face up/down control
+      description: Deals a card to a specific player with control over face up/down
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+        - $ref: '#/components/parameters/PlayerId'
+        - name: faceUp
+          in: path
+          required: true
+          description: Whether the card should be face up
+          schema:
+            type: string
+            enum: [true, false, "1", "0"]
+      responses:
+        '200':
+          description: Card dealt to player
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayerCardWithFaceResponse'
+        '400':
+          $ref: '#/components/responses/InvalidParameter'
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+
+  /game/{gameId}/discard/{pileId}:
+    post:
+      tags:
+        - discard-operations
+      summary: Discard a card to a pile
+      description: Moves a card from a player's hand to a discard pile
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+        - name: pileId
+          in: path
+          required: true
+          description: ID of the discard pile
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9_-]{1,50}$'
+            example: "main"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                player_id:
+                  type: string
+                  format: uuid
+                  description: ID of the player discarding the card
+                card_index:
+                  type: integer
+                  minimum: 0
+                  maximum: 51
+                  description: Index of the card in the player's hand
+              required:
+                - player_id
+                - card_index
+      responses:
+        '200':
+          description: Card discarded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscardResponse'
+        '400':
+          $ref: '#/components/responses/InvalidParameter'
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+
+  /game/{gameId}/start:
+    post:
+      tags:
+        - blackjack-gameplay
+      summary: Start a blackjack game
+      description: Starts a blackjack game by dealing 2 cards to each player and dealer
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Blackjack game started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  game_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum: [in_progress]
+                  message:
+                    type: string
+                    example: "Blackjack game started"
+                  current_player:
+                    type: integer
+                    description: Index of the current player (0-based)
+        '400':
+          description: Cannot start game (no players, etc.)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+
+  /game/{gameId}/hit/{playerId}:
+    post:
+      tags:
+        - blackjack-gameplay
+      summary: Player takes a card (hit)
+      description: Deals an additional card to the specified player
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+        - $ref: '#/components/parameters/PlayerId'
+      responses:
+        '200':
+          description: Card dealt to player
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlackjackHitResponse'
+        '400':
+          $ref: '#/components/responses/InvalidParameter'
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+
+  /game/{gameId}/stand/{playerId}:
+    post:
+      tags:
+        - blackjack-gameplay
+      summary: Player stands (ends turn)
+      description: Player chooses to stand, ending their turn
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+        - $ref: '#/components/parameters/PlayerId'
+      responses:
+        '200':
+          description: Player stands
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  game_id:
+                    type: string
+                    format: uuid
+                  player_id:
+                    type: string
+                    format: uuid
+                  player_name:
+                    type: string
+                  status:
+                    type: string
+                    enum: [in_progress, finished]
+                  current_player:
+                    type: integer
+                    description: Index of next player or dealer
+                  message:
+                    type: string
+                    example: "Alice stands"
+        '400':
+          $ref: '#/components/responses/InvalidParameter'
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+
+  /game/{gameId}/results:
+    get:
+      tags:
+        - blackjack-gameplay
+      summary: Get blackjack game results
+      description: Returns the final results of a completed blackjack game
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Game results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlackjackResultsResponse'
+        '400':
+          $ref: '#/components/responses/InvalidGameId'
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+
+components:
+  parameters:
+    GameId:
+      name: gameId
+      in: path
+      required: true
+      description: Unique identifier for the game
+      schema:
+        type: string
+        format: uuid
+        example: "123e4567-e89b-12d3-a456-426614174000"
+    
+    PlayerId:
+      name: playerId
+      in: path
+      required: true
+      description: Unique identifier for the player (UUID) or "dealer"
+      schema:
+        oneOf:
+          - type: string
+            format: uuid
+          - type: string
+            enum: [dealer]
+        example: "player-uuid-alice"
+
+  responses:
+    InvalidGameId:
+      description: Invalid game ID format
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Invalid game ID format"
+    
+    GameNotFound:
+      description: Game not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Game not found"
+    
+    InvalidParameter:
+      description: Invalid parameter
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message describing what went wrong
+      required:
+        - error
+      example:
+        error: "Game not found"
+
+    DeckType:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Numeric ID of the deck type
+          example: 0
+        type:
+          type: string
+          description: Type name
+          example: "Standard"
+        name:
+          type: string
+          description: Display name
+          example: "Standard"
+        description:
+          type: string
+          description: Description of the deck type
+          example: "Traditional 52-card deck with all ranks from Ace to King in all four suits"
+        cards_per_deck:
+          type: integer
+          description: Number of cards in one deck of this type
+          example: 52
+      required:
+        - id
+        - type
+        - name
+        - description
+        - cards_per_deck
+
+    CardImages:
+      type: object
+      properties:
+        icon:
+          type: string
+          format: uri
+          description: URL to icon-sized card image (32x48)
+          example: "http://localhost:8080/static/cards/icon/1_0.png"
+        small:
+          type: string
+          format: uri
+          description: URL to small card image (64x90)
+          example: "http://localhost:8080/static/cards/small/1_0.png"
+        large:
+          type: string
+          format: uri
+          description: URL to large card image (200x280)
+          example: "http://localhost:8080/static/cards/large/1_0.png"
+      required:
+        - icon
+        - small
+        - large
+
+    Card:
+      type: object
+      properties:
+        rank:
+          type: integer
+          minimum: 1
+          maximum: 13
+          description: Card rank (1=Ace, 11=Jack, 12=Queen, 13=King)
+          example: 1
+        suit:
+          type: integer
+          minimum: 0
+          maximum: 3
+          description: Card suit (0=Hearts, 1=Diamonds, 2=Clubs, 3=Spades)
+          example: 0
+        face_up:
+          type: boolean
+          description: Whether the card is face up
+          example: true
+        images:
+          $ref: '#/components/schemas/CardImages'
+      required:
+        - rank
+        - suit
+        - face_up
+
+    Player:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique player identifier
+          example: "player-uuid-alice"
+        name:
+          type: string
+          description: Player name
+          example: "Alice"
+        hand:
+          type: array
+          items:
+            $ref: '#/components/schemas/Card'
+          description: Player's current hand
+        hand_size:
+          type: integer
+          description: Number of cards in hand
+          example: 2
+        hand_value:
+          type: integer
+          description: Blackjack value of the hand
+          example: 21
+        has_blackjack:
+          type: boolean
+          description: Whether the player has blackjack (21 with 2 cards)
+          example: true
+        is_busted:
+          type: boolean
+          description: Whether the player's hand value exceeds 21
+          example: false
+      required:
+        - id
+        - name
+        - hand
+        - hand_size
+
+    GameCreationResponse:
+      type: object
+      properties:
+        game_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        deck_name:
+          type: string
+          example: "Golden Phoenix"
+        deck_type:
+          type: string
+          example: "Standard"
+        message:
+          type: string
+          example: "New Standard game created with 1 deck"
+        remaining_cards:
+          type: integer
+          example: 52
+        created:
+          type: string
+          format: date-time
+          example: "2025-07-29T10:30:00Z"
+      required:
+        - game_id
+        - deck_name
+        - deck_type
+        - message
+        - remaining_cards
+        - created
+
+    GameCreationWithPlayersResponse:
+      allOf:
+        - $ref: '#/components/schemas/GameCreationResponse'
+        - type: object
+          properties:
+            game_type:
+              type: string
+              example: "Blackjack"
+            max_players:
+              type: integer
+              example: 4
+            current_players:
+              type: integer
+              example: 0
+          required:
+            - game_type
+            - max_players
+            - current_players
+
+    GameInfoResponse:
+      type: object
+      properties:
+        game_id:
+          type: string
+          format: uuid
+        deck_name:
+          type: string
+        deck_type:
+          type: string
+        remaining_cards:
+          type: integer
+        is_empty:
+          type: boolean
+        created:
+          type: string
+          format: date-time
+        last_used:
+          type: string
+          format: date-time
+        cards:
+          type: array
+          items:
+            $ref: '#/components/schemas/Card'
+          description: All cards currently in the deck
+      required:
+        - game_id
+        - deck_name
+        - deck_type
+        - remaining_cards
+        - is_empty
+        - created
+        - last_used
+
+    GameStateResponse:
+      type: object
+      properties:
+        game_id:
+          type: string
+          format: uuid
+        game_type:
+          type: string
+          example: "Blackjack"
+        status:
+          type: string
+          enum: [waiting, in_progress, finished]
+          example: "in_progress"
+        current_player:
+          type: integer
+          description: Index of the current player
+          example: 0
+        deck_name:
+          type: string
+        deck_type:
+          type: string
+        remaining_cards:
+          type: integer
+        max_players:
+          type: integer
+        current_players:
+          type: integer
+        players:
+          type: array
+          items:
+            $ref: '#/components/schemas/Player'
+        dealer:
+          $ref: '#/components/schemas/Player'
+        discard_piles:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              size:
+                type: integer
+              cards:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Card'
+        created:
+          type: string
+          format: date-time
+        last_used:
+          type: string
+          format: date-time
+      required:
+        - game_id
+        - game_type
+        - status
+        - players
+        - dealer
+
+    DeckOperationResponse:
+      type: object
+      properties:
+        game_id:
+          type: string
+          format: uuid
+        deck_name:
+          type: string
+        deck_type:
+          type: string
+        message:
+          type: string
+        remaining_cards:
+          type: integer
+      required:
+        - game_id
+        - deck_name
+        - deck_type
+        - message
+        - remaining_cards
+
+    DeckResetResponse:
+      allOf:
+        - $ref: '#/components/schemas/DeckOperationResponse'
+        - type: object
+          properties:
+            num_decks:
+              type: integer
+              description: Number of decks in the reset deck
+          required:
+            - num_decks
+
+    PlayerAddedResponse:
+      type: object
+      properties:
+        game_id:
+          type: string
+          format: uuid
+        player:
+          $ref: '#/components/schemas/Player'
+        message:
+          type: string
+          example: "Player added successfully"
+      required:
+        - game_id
+        - player
+        - message
+
+    SingleCardResponse:
+      type: object
+      properties:
+        game_id:
+          type: string
+          format: uuid
+        deck_name:
+          type: string
+        card:
+          $ref: '#/components/schemas/Card'
+        remaining_cards:
+          type: integer
+      required:
+        - game_id
+        - deck_name
+        - card
+        - remaining_cards
+
+    MultipleCardsResponse:
+      type: object
+      properties:
+        game_id:
+          type: string
+          format: uuid
+        deck_name:
+          type: string
+        cards:
+          type: array
+          items:
+            $ref: '#/components/schemas/Card'
+        cards_dealt:
+          type: integer
+        remaining_cards:
+          type: integer
+      required:
+        - game_id
+        - deck_name
+        - cards
+        - cards_dealt
+        - remaining_cards
+
+    PlayerCardResponse:
+      type: object
+      properties:
+        game_id:
+          type: string
+          format: uuid
+        player_id:
+          type: string
+        player_name:
+          type: string
+        card:
+          $ref: '#/components/schemas/Card'
+        hand_size:
+          type: integer
+        remaining_cards:
+          type: integer
+        message:
+          type: string
+      required:
+        - game_id
+        - player_id
+        - player_name
+        - card
+        - hand_size
+        - remaining_cards
+        - message
+
+    PlayerCardWithFaceResponse:
+      allOf:
+        - $ref: '#/components/schemas/PlayerCardResponse'
+        - type: object
+          properties:
+            face_up:
+              type: boolean
+              description: Whether the card was dealt face up
+          required:
+            - face_up
+
+    DiscardResponse:
+      type: object
+      properties:
+        game_id:
+          type: string
+          format: uuid
+        player_id:
+          type: string
+        player_name:
+          type: string
+        card:
+          $ref: '#/components/schemas/Card'
+        pile_id:
+          type: string
+        pile_name:
+          type: string
+        pile_size:
+          type: integer
+        hand_size:
+          type: integer
+        message:
+          type: string
+      required:
+        - game_id
+        - player_id
+        - player_name
+        - card
+        - pile_id
+        - pile_name
+        - pile_size
+        - hand_size
+        - message
+
+    BlackjackHitResponse:
+      type: object
+      properties:
+        game_id:
+          type: string
+          format: uuid
+        player_id:
+          type: string
+        player_name:
+          type: string
+        hand_value:
+          type: integer
+          description: Current hand value after hit
+        hand_size:
+          type: integer
+          description: Current number of cards in hand
+        has_blackjack:
+          type: boolean
+        is_busted:
+          type: boolean
+        message:
+          type: string
+      required:
+        - game_id
+        - player_id
+        - player_name
+        - hand_value
+        - hand_size
+        - has_blackjack
+        - is_busted
+        - message
+
+    BlackjackResultsResponse:
+      type: object
+      properties:
+        game_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [finished]
+        dealer:
+          type: object
+          properties:
+            hand_value:
+              type: integer
+            has_blackjack:
+              type: boolean
+            is_busted:
+              type: boolean
+          required:
+            - hand_value
+            - has_blackjack
+            - is_busted
+        players:
+          type: array
+          items:
+            type: object
+            properties:
+              player_id:
+                type: string
+              player_name:
+                type: string
+              hand_value:
+                type: integer
+              has_blackjack:
+                type: boolean
+              is_busted:
+                type: boolean
+              result:
+                type: string
+                enum: [blackjack, win, push, bust, lose]
+                description: Player's result against the dealer
+            required:
+              - player_id
+              - player_name
+              - hand_value
+              - has_blackjack
+              - is_busted
+              - result
+        results:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [blackjack, win, push, bust, lose]
+          description: Map of player IDs to their results
+      required:
+        - game_id
+        - status
+        - dealer
+        - players
+        - results
+
+  securitySchemes: {}
+
+security: []
