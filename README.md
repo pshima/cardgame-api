@@ -35,432 +35,7 @@ curl http://localhost:8080/hello
 - **Interactive API Documentation**: http://localhost:8080/api-docs
 - **OpenAPI Specification**: http://localhost:8080/openapi.yaml
 
-## Complete Blackjack Game Flow
 
-Here's a step-by-step example of running a full blackjack game with 2 players:
-
-### Step 1: Create a Blackjack Game
-```bash
-# Create game with 2 decks, standard cards, max 4 players
-curl "http://localhost:8080/game/new/2/standard/4"
-```
-
-**Response:**
-```json
-{
-  "game_id": "123e4567-e89b-12d3-a456-426614174000",
-  "game_type": "Blackjack",
-  "deck_name": "Golden Phoenix",
-  "deck_type": "Standard",
-  "max_players": 4,
-  "current_players": 0,
-  "message": "New Standard Blackjack game created",
-  "remaining_cards": 104,
-  "created": "2025-07-29T10:30:00Z"
-}
-```
-
-### Step 2: Add Players
-```bash
-# Add first player
-curl -X POST "http://localhost:8080/game/123e4567-e89b-12d3-a456-426614174000/players" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Alice"}'
-
-# Add second player  
-curl -X POST "http://localhost:8080/game/123e4567-e89b-12d3-a456-426614174000/players" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Bob"}'
-```
-
-**Response:**
-```json
-{
-  "game_id": "123e4567-e89b-12d3-a456-426614174000",
-  "player": {
-    "id": "player-uuid-alice",
-    "name": "Alice",
-    "hand": []
-  },
-  "message": "Player added successfully"
-}
-```
-
-### Step 3: Shuffle the Deck
-```bash
-curl "http://localhost:8080/game/123e4567-e89b-12d3-a456-426614174000/shuffle"
-```
-
-### Step 4: Start the Blackjack Game
-```bash
-# This deals 2 cards to each player and dealer automatically
-curl -X POST "http://localhost:8080/game/123e4567-e89b-12d3-a456-426614174000/start"
-```
-
-**Response:**
-```json
-{
-  "game_id": "123e4567-e89b-12d3-a456-426614174000",
-  "status": "in_progress",
-  "message": "Blackjack game started",
-  "current_player": 0
-}
-```
-
-### Step 5: Check Game State
-```bash
-curl "http://localhost:8080/game/123e4567-e89b-12d3-a456-426614174000/state"
-```
-
-**Response:**
-```json
-{
-  "game_id": "123e4567-e89b-12d3-a456-426614174000",
-  "game_type": "Blackjack",
-  "status": "in_progress",
-  "current_player": 0,
-  "remaining_cards": 98,
-  "players": [
-    {
-      "id": "player-uuid-alice",
-      "name": "Alice",
-      "hand": [
-        {
-          "rank": 10, 
-          "suit": 2, 
-          "face_up": true,
-          "images": {
-            "icon": "http://localhost:8080/static/cards/icon/10_2.png",
-            "small": "http://localhost:8080/static/cards/small/10_2.png",
-            "large": "http://localhost:8080/static/cards/large/10_2.png"
-          }
-        },
-        {
-          "rank": 1, 
-          "suit": 0, 
-          "face_up": true,
-          "images": {
-            "icon": "http://localhost:8080/static/cards/icon/1_0.png",
-            "small": "http://localhost:8080/static/cards/small/1_0.png",
-            "large": "http://localhost:8080/static/cards/large/1_0.png"
-          }
-        }
-      ],
-      "hand_size": 2,
-      "hand_value": 21,
-      "has_blackjack": true,
-      "is_busted": false
-    },
-    {
-      "id": "player-uuid-bob", 
-      "name": "Bob",
-      "hand": [
-        {"rank": 7, "suit": 1, "face_up": true},
-        {"rank": 5, "suit": 3, "face_up": true}
-      ],
-      "hand_size": 2,
-      "hand_value": 12,
-      "has_blackjack": false,
-      "is_busted": false
-    }
-  ],
-  "dealer": {
-    "id": "dealer",
-    "name": "Dealer", 
-    "hand": [
-      {"rank": 13, "suit": 2, "face_up": false},
-      {"rank": 6, "suit": 1, "face_up": true}
-    ],
-    "hand_size": 2,
-    "hand_value": 16,
-    "has_blackjack": false,
-    "is_busted": false
-  }
-}
-```
-
-### Step 6: Player Actions
-
-#### Alice has blackjack, so Bob plays first
-```bash
-# Bob hits (takes another card)
-curl -X POST "http://localhost:8080/game/123e4567-e89b-12d3-a456-426614174000/hit/player-uuid-bob"
-```
-
-**Response:**
-```json
-{
-  "game_id": "123e4567-e89b-12d3-a456-426614174000",
-  "player_id": "player-uuid-bob",
-  "player_name": "Bob",
-  "hand_value": 21,
-  "hand_size": 3,
-  "has_blackjack": false,
-  "is_busted": false,
-  "message": "Card dealt to Bob"
-}
-```
-
-#### Bob got 21! Now he stands
-```bash
-curl -X POST "http://localhost:8080/game/123e4567-e89b-12d3-a456-426614174000/stand/player-uuid-bob"
-```
-
-**Response:**
-```json
-{
-  "game_id": "123e4567-e89b-12d3-a456-426614174000",
-  "player_id": "player-uuid-bob",
-  "player_name": "Bob", 
-  "status": "finished",
-  "current_player": 2,
-  "message": "Bob stands"
-}
-```
-
-### Step 7: Get Final Results
-```bash
-curl "http://localhost:8080/game/123e4567-e89b-12d3-a456-426614174000/results"
-```
-
-**Response:**
-```json
-{
-  "game_id": "123e4567-e89b-12d3-a456-426614174000",
-  "status": "finished",
-  "dealer": {
-    "hand_value": 16,
-    "has_blackjack": false,
-    "is_busted": false
-  },
-  "players": [
-    {
-      "player_id": "player-uuid-alice",
-      "player_name": "Alice",
-      "hand_value": 21,
-      "has_blackjack": true,
-      "is_busted": false,
-      "result": "blackjack"
-    },
-    {
-      "player_id": "player-uuid-bob",
-      "player_name": "Bob", 
-      "hand_value": 21,
-      "has_blackjack": false,
-      "is_busted": false,
-      "result": "win"
-    }
-  ],
-  "results": {
-    "player-uuid-alice": "blackjack",
-    "player-uuid-bob": "win"
-  }
-}
-```
-
-## Complete Cribbage Game Flow
-
-Here's a step-by-step example of running a full cribbage game:
-
-### Step 1: Create a Cribbage Game
-```bash
-# Create a new cribbage game (automatically configured for 2 players with 1 standard deck)
-curl "http://localhost:8080/game/new/cribbage"
-```
-
-**Response:**
-```json
-{
-  "game_id": "456e7890-e89b-12d3-a456-426614174111",
-  "game_type": "Cribbage",
-  "deck_name": "Swift Eagle",
-  "deck_type": "Standard",
-  "max_players": 2,
-  "current_players": 0,
-  "message": "New Cribbage game created",
-  "remaining_cards": 52,
-  "created": "2025-07-29T10:30:00Z"
-}
-```
-
-### Step 2: Add Two Players
-```bash
-# Add first player
-curl -X POST "http://localhost:8080/game/456e7890-e89b-12d3-a456-426614174111/players" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Alice"}'
-
-# Add second player  
-curl -X POST "http://localhost:8080/game/456e7890-e89b-12d3-a456-426614174111/players" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Bob"}'
-```
-
-### Step 3: Start the Cribbage Game (Deal Phase)
-```bash
-# This deals 6 cards to each player and moves to discard phase
-curl -X POST "http://localhost:8080/game/456e7890-e89b-12d3-a456-426614174111/cribbage/start"
-```
-
-**Response:**
-```json
-{
-  "game_id": "456e7890-e89b-12d3-a456-426614174111",
-  "game_type": "Cribbage",
-  "status": "in_progress",
-  "phase": "discard",
-  "dealer": 0,
-  "current_player": 1,
-  "message": "Cribbage game started"
-}
-```
-
-### Step 4: Check Game State
-```bash
-curl "http://localhost:8080/game/456e7890-e89b-12d3-a456-426614174111/cribbage/state"
-```
-
-**Response shows each player with 6 cards:**
-```json
-{
-  "game_id": "456e7890-e89b-12d3-a456-426614174111",
-  "game_type": "Cribbage",
-  "status": "in_progress",
-  "phase": "discard",
-  "dealer": 0,
-  "current_player": 1,
-  "players": [
-    {
-      "id": "player-uuid-alice",
-      "name": "Alice",
-      "hand": [
-        {"rank": 1, "suit": 0, "face_up": true, "images": {...}},
-        {"rank": 5, "suit": 1, "face_up": true, "images": {...}},
-        {"rank": 10, "suit": 2, "face_up": true, "images": {...}},
-        {"rank": 11, "suit": 3, "face_up": true, "images": {...}},
-        {"rank": 4, "suit": 0, "face_up": true, "images": {...}},
-        {"rank": 9, "suit": 1, "face_up": true, "images": {...}}
-      ],
-      "hand_size": 6,
-      "score": 0
-    },
-    {
-      "id": "player-uuid-bob", 
-      "name": "Bob",
-      "hand": [...],
-      "hand_size": 6,
-      "score": 0
-    }
-  ],
-  "crib": [],
-  "crib_size": 0,
-  "play_total": 0,
-  "player_scores": [0, 0],
-  "game_score": 121
-}
-```
-
-### Step 5: Discard Phase - Players Put 2 Cards in Crib
-```bash
-# Bob (non-dealer) discards first - put cards at indices 4 and 5 into crib
-curl -X POST "http://localhost:8080/game/456e7890-e89b-12d3-a456-426614174111/cribbage/discard/player-uuid-bob" \
-  -H "Content-Type: application/json" \
-  -d '{"card_indices": [4, 5]}'
-
-# Alice (dealer) discards next
-curl -X POST "http://localhost:8080/game/456e7890-e89b-12d3-a456-426614174111/cribbage/discard/player-uuid-alice" \
-  -H "Content-Type: application/json" \
-  -d '{"card_indices": [3, 5]}'
-```
-
-**Response after both players discard:**
-```json
-{
-  "game_id": "456e7890-e89b-12d3-a456-426614174111",
-  "player_id": "player-uuid-alice", 
-  "player_name": "Alice",
-  "phase": "play",
-  "starter": {
-    "rank": 6,
-    "suit": 2,
-    "face_up": true,
-    "images": {...}
-  },
-  "message": "Cards discarded, starter cut, play phase begun"
-}
-```
-
-### Step 6: Play Phase - Alternate Playing Cards (Pegging)
-```bash
-# Bob plays first card (non-dealer leads)
-curl -X POST "http://localhost:8080/game/456e7890-e89b-12d3-a456-426614174111/cribbage/play/player-uuid-bob" \
-  -H "Content-Type: application/json" \
-  -d '{"card_index": 0}'
-
-# Alice plays a card
-curl -X POST "http://localhost:8080/game/456e7890-e89b-12d3-a456-426614174111/cribbage/play/player-uuid-alice" \
-  -H "Content-Type: application/json" \
-  -d '{"card_index": 1}'
-```
-
-**Response:**
-```json
-{
-  "game_id": "456e7890-e89b-12d3-a456-426614174111",
-  "player_id": "player-uuid-alice",
-  "player_name": "Alice",
-  "play_total": 15,
-  "play_count": 2,
-  "player_score": 2,
-  "phase": "play",
-  "current_player": 1,
-  "message": "Card played"
-}
-```
-
-### Step 7: Continue Play Until Cards Exhausted
-Players continue alternating plays. If a player can't play without exceeding 31, they say "go":
-
-```bash
-# Player says "go" when they can't play
-curl -X POST "http://localhost:8080/game/456e7890-e89b-12d3-a456-426614174111/cribbage/go/player-uuid-bob"
-```
-
-### Step 8: Show Phase - Score Hands and Crib
-```bash
-# After all cards are played, score the hands
-curl "http://localhost:8080/game/456e7890-e89b-12d3-a456-426614174111/cribbage/show"
-```
-
-**Response:**
-```json
-{
-  "game_id": "456e7890-e89b-12d3-a456-426614174111",
-  "scores": {
-    "player-uuid-bob": 8,
-    "player-uuid-alice": 12,
-    "crib": 6
-  },
-  "player_scores": [18, 8],
-  "phase": "deal",
-  "status": "in_progress"
-}
-```
-
-### Step 9: Continue Until Game Ends at 121 Points
-The game continues with new deals until one player reaches 121 points:
-
-```json
-{
-  "game_id": "456e7890-e89b-12d3-a456-426614174111",
-  "scores": {...},
-  "player_scores": [121, 95],
-  "phase": "finished",
-  "status": "finished",
-  "winner": "Alice",
-  "winner_id": "player-uuid-alice"
-}
-```
 
 ## Custom Deck Creation and Management
 
@@ -1014,6 +589,433 @@ The API is fully documented with OpenAPI 3.0 specification:
 
 ### Thread Safety
 All game operations are protected by read-write mutexes to ensure safe concurrent access across multiple games and players.
+
+## Complete Blackjack Game Flow
+
+Here's a step-by-step example of running a full blackjack game with 2 players:
+
+### Step 1: Create a Blackjack Game
+```bash
+# Create game with 2 decks, standard cards, max 4 players
+curl "http://localhost:8080/game/new/2/standard/4"
+```
+
+**Response:**
+```json
+{
+  "game_id": "123e4567-e89b-12d3-a456-426614174000",
+  "game_type": "Blackjack",
+  "deck_name": "Golden Phoenix",
+  "deck_type": "Standard",
+  "max_players": 4,
+  "current_players": 0,
+  "message": "New Standard Blackjack game created",
+  "remaining_cards": 104,
+  "created": "2025-07-29T10:30:00Z"
+}
+```
+
+### Step 2: Add Players
+```bash
+# Add first player
+curl -X POST "http://localhost:8080/game/123e4567-e89b-12d3-a456-426614174000/players" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Alice"}'
+
+# Add second player  
+curl -X POST "http://localhost:8080/game/123e4567-e89b-12d3-a456-426614174000/players" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Bob"}'
+```
+
+**Response:**
+```json
+{
+  "game_id": "123e4567-e89b-12d3-a456-426614174000",
+  "player": {
+    "id": "player-uuid-alice",
+    "name": "Alice",
+    "hand": []
+  },
+  "message": "Player added successfully"
+}
+```
+
+### Step 3: Shuffle the Deck
+```bash
+curl "http://localhost:8080/game/123e4567-e89b-12d3-a456-426614174000/shuffle"
+```
+
+### Step 4: Start the Blackjack Game
+```bash
+# This deals 2 cards to each player and dealer automatically
+curl -X POST "http://localhost:8080/game/123e4567-e89b-12d3-a456-426614174000/start"
+```
+
+**Response:**
+```json
+{
+  "game_id": "123e4567-e89b-12d3-a456-426614174000",
+  "status": "in_progress",
+  "message": "Blackjack game started",
+  "current_player": 0
+}
+```
+
+### Step 5: Check Game State
+```bash
+curl "http://localhost:8080/game/123e4567-e89b-12d3-a456-426614174000/state"
+```
+
+**Response:**
+```json
+{
+  "game_id": "123e4567-e89b-12d3-a456-426614174000",
+  "game_type": "Blackjack",
+  "status": "in_progress",
+  "current_player": 0,
+  "remaining_cards": 98,
+  "players": [
+    {
+      "id": "player-uuid-alice",
+      "name": "Alice",
+      "hand": [
+        {
+          "rank": 10, 
+          "suit": 2, 
+          "face_up": true,
+          "images": {
+            "icon": "http://localhost:8080/static/cards/icon/10_2.png",
+            "small": "http://localhost:8080/static/cards/small/10_2.png",
+            "large": "http://localhost:8080/static/cards/large/10_2.png"
+          }
+        },
+        {
+          "rank": 1, 
+          "suit": 0, 
+          "face_up": true,
+          "images": {
+            "icon": "http://localhost:8080/static/cards/icon/1_0.png",
+            "small": "http://localhost:8080/static/cards/small/1_0.png",
+            "large": "http://localhost:8080/static/cards/large/1_0.png"
+          }
+        }
+      ],
+      "hand_size": 2,
+      "hand_value": 21,
+      "has_blackjack": true,
+      "is_busted": false
+    },
+    {
+      "id": "player-uuid-bob", 
+      "name": "Bob",
+      "hand": [
+        {"rank": 7, "suit": 1, "face_up": true},
+        {"rank": 5, "suit": 3, "face_up": true}
+      ],
+      "hand_size": 2,
+      "hand_value": 12,
+      "has_blackjack": false,
+      "is_busted": false
+    }
+  ],
+  "dealer": {
+    "id": "dealer",
+    "name": "Dealer", 
+    "hand": [
+      {"rank": 13, "suit": 2, "face_up": false},
+      {"rank": 6, "suit": 1, "face_up": true}
+    ],
+    "hand_size": 2,
+    "hand_value": 16,
+    "has_blackjack": false,
+    "is_busted": false
+  }
+}
+```
+
+### Step 6: Player Actions
+
+#### Alice has blackjack, so Bob plays first
+```bash
+# Bob hits (takes another card)
+curl -X POST "http://localhost:8080/game/123e4567-e89b-12d3-a456-426614174000/hit/player-uuid-bob"
+```
+
+**Response:**
+```json
+{
+  "game_id": "123e4567-e89b-12d3-a456-426614174000",
+  "player_id": "player-uuid-bob",
+  "player_name": "Bob",
+  "hand_value": 21,
+  "hand_size": 3,
+  "has_blackjack": false,
+  "is_busted": false,
+  "message": "Card dealt to Bob"
+}
+```
+
+#### Bob got 21! Now he stands
+```bash
+curl -X POST "http://localhost:8080/game/123e4567-e89b-12d3-a456-426614174000/stand/player-uuid-bob"
+```
+
+**Response:**
+```json
+{
+  "game_id": "123e4567-e89b-12d3-a456-426614174000",
+  "player_id": "player-uuid-bob",
+  "player_name": "Bob", 
+  "status": "finished",
+  "current_player": 2,
+  "message": "Bob stands"
+}
+```
+
+### Step 7: Get Final Results
+```bash
+curl "http://localhost:8080/game/123e4567-e89b-12d3-a456-426614174000/results"
+```
+
+**Response:**
+```json
+{
+  "game_id": "123e4567-e89b-12d3-a456-426614174000",
+  "status": "finished",
+  "dealer": {
+    "hand_value": 16,
+    "has_blackjack": false,
+    "is_busted": false
+  },
+  "players": [
+    {
+      "player_id": "player-uuid-alice",
+      "player_name": "Alice",
+      "hand_value": 21,
+      "has_blackjack": true,
+      "is_busted": false,
+      "result": "blackjack"
+    },
+    {
+      "player_id": "player-uuid-bob",
+      "player_name": "Bob", 
+      "hand_value": 21,
+      "has_blackjack": false,
+      "is_busted": false,
+      "result": "win"
+    }
+  ],
+  "results": {
+    "player-uuid-alice": "blackjack",
+    "player-uuid-bob": "win"
+  }
+}
+```
+
+## Complete Cribbage Game Flow
+
+Here's a step-by-step example of running a full cribbage game:
+
+### Step 1: Create a Cribbage Game
+```bash
+# Create a new cribbage game (automatically configured for 2 players with 1 standard deck)
+curl "http://localhost:8080/game/new/cribbage"
+```
+
+**Response:**
+```json
+{
+  "game_id": "456e7890-e89b-12d3-a456-426614174111",
+  "game_type": "Cribbage",
+  "deck_name": "Swift Eagle",
+  "deck_type": "Standard",
+  "max_players": 2,
+  "current_players": 0,
+  "message": "New Cribbage game created",
+  "remaining_cards": 52,
+  "created": "2025-07-29T10:30:00Z"
+}
+```
+
+### Step 2: Add Two Players
+```bash
+# Add first player
+curl -X POST "http://localhost:8080/game/456e7890-e89b-12d3-a456-426614174111/players" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Alice"}'
+
+# Add second player  
+curl -X POST "http://localhost:8080/game/456e7890-e89b-12d3-a456-426614174111/players" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Bob"}'
+```
+
+### Step 3: Start the Cribbage Game (Deal Phase)
+```bash
+# This deals 6 cards to each player and moves to discard phase
+curl -X POST "http://localhost:8080/game/456e7890-e89b-12d3-a456-426614174111/cribbage/start"
+```
+
+**Response:**
+```json
+{
+  "game_id": "456e7890-e89b-12d3-a456-426614174111",
+  "game_type": "Cribbage",
+  "status": "in_progress",
+  "phase": "discard",
+  "dealer": 0,
+  "current_player": 1,
+  "message": "Cribbage game started"
+}
+```
+
+### Step 4: Check Game State
+```bash
+curl "http://localhost:8080/game/456e7890-e89b-12d3-a456-426614174111/cribbage/state"
+```
+
+**Response shows each player with 6 cards:**
+```json
+{
+  "game_id": "456e7890-e89b-12d3-a456-426614174111",
+  "game_type": "Cribbage",
+  "status": "in_progress",
+  "phase": "discard",
+  "dealer": 0,
+  "current_player": 1,
+  "players": [
+    {
+      "id": "player-uuid-alice",
+      "name": "Alice",
+      "hand": [
+        {"rank": 1, "suit": 0, "face_up": true, "images": {...}},
+        {"rank": 5, "suit": 1, "face_up": true, "images": {...}},
+        {"rank": 10, "suit": 2, "face_up": true, "images": {...}},
+        {"rank": 11, "suit": 3, "face_up": true, "images": {...}},
+        {"rank": 4, "suit": 0, "face_up": true, "images": {...}},
+        {"rank": 9, "suit": 1, "face_up": true, "images": {...}}
+      ],
+      "hand_size": 6,
+      "score": 0
+    },
+    {
+      "id": "player-uuid-bob", 
+      "name": "Bob",
+      "hand": [...],
+      "hand_size": 6,
+      "score": 0
+    }
+  ],
+  "crib": [],
+  "crib_size": 0,
+  "play_total": 0,
+  "player_scores": [0, 0],
+  "game_score": 121
+}
+```
+
+### Step 5: Discard Phase - Players Put 2 Cards in Crib
+```bash
+# Bob (non-dealer) discards first - put cards at indices 4 and 5 into crib
+curl -X POST "http://localhost:8080/game/456e7890-e89b-12d3-a456-426614174111/cribbage/discard/player-uuid-bob" \
+  -H "Content-Type: application/json" \
+  -d '{"card_indices": [4, 5]}'
+
+# Alice (dealer) discards next
+curl -X POST "http://localhost:8080/game/456e7890-e89b-12d3-a456-426614174111/cribbage/discard/player-uuid-alice" \
+  -H "Content-Type: application/json" \
+  -d '{"card_indices": [3, 5]}'
+```
+
+**Response after both players discard:**
+```json
+{
+  "game_id": "456e7890-e89b-12d3-a456-426614174111",
+  "player_id": "player-uuid-alice", 
+  "player_name": "Alice",
+  "phase": "play",
+  "starter": {
+    "rank": 6,
+    "suit": 2,
+    "face_up": true,
+    "images": {...}
+  },
+  "message": "Cards discarded, starter cut, play phase begun"
+}
+```
+
+### Step 6: Play Phase - Alternate Playing Cards (Pegging)
+```bash
+# Bob plays first card (non-dealer leads)
+curl -X POST "http://localhost:8080/game/456e7890-e89b-12d3-a456-426614174111/cribbage/play/player-uuid-bob" \
+  -H "Content-Type: application/json" \
+  -d '{"card_index": 0}'
+
+# Alice plays a card
+curl -X POST "http://localhost:8080/game/456e7890-e89b-12d3-a456-426614174111/cribbage/play/player-uuid-alice" \
+  -H "Content-Type: application/json" \
+  -d '{"card_index": 1}'
+```
+
+**Response:**
+```json
+{
+  "game_id": "456e7890-e89b-12d3-a456-426614174111",
+  "player_id": "player-uuid-alice",
+  "player_name": "Alice",
+  "play_total": 15,
+  "play_count": 2,
+  "player_score": 2,
+  "phase": "play",
+  "current_player": 1,
+  "message": "Card played"
+}
+```
+
+### Step 7: Continue Play Until Cards Exhausted
+Players continue alternating plays. If a player can't play without exceeding 31, they say "go":
+
+```bash
+# Player says "go" when they can't play
+curl -X POST "http://localhost:8080/game/456e7890-e89b-12d3-a456-426614174111/cribbage/go/player-uuid-bob"
+```
+
+### Step 8: Show Phase - Score Hands and Crib
+```bash
+# After all cards are played, score the hands
+curl "http://localhost:8080/game/456e7890-e89b-12d3-a456-426614174111/cribbage/show"
+```
+
+**Response:**
+```json
+{
+  "game_id": "456e7890-e89b-12d3-a456-426614174111",
+  "scores": {
+    "player-uuid-bob": 8,
+    "player-uuid-alice": 12,
+    "crib": 6
+  },
+  "player_scores": [18, 8],
+  "phase": "deal",
+  "status": "in_progress"
+}
+```
+
+### Step 9: Continue Until Game Ends at 121 Points
+The game continues with new deals until one player reaches 121 points:
+
+```json
+{
+  "game_id": "456e7890-e89b-12d3-a456-426614174111",
+  "scores": {...},
+  "player_scores": [121, 95],
+  "phase": "finished",
+  "status": "finished",
+  "winner": "Alice",
+  "winner_id": "player-uuid-alice"
+}
+```
 
 ## License
 
