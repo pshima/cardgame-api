@@ -1,0 +1,42 @@
+# Binary files
+cardgame-api
+cardgame-api-test
+*.exe
+
+# Test files
+*_test.go
+test_*.sh
+verify_*.sh
+test_cards.html
+
+# Git files
+.git/
+.gitignore
+
+# Documentation files not needed in container
+README.md
+SECURITY.md
+CLAUDE.md
+LICENSE
+
+# IDE and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Go build cache
+/vendor/
+go.work
+go.work.sum
+
+# Temporary files
+*.tmp
+*.log
+tmp/
+
+# Development files (not needed in production)
+.air.toml
+Dockerfile.dev

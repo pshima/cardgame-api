@@ -1,6 +1,6 @@
 # Security Implementation
 
-This document describes the security measures implemented in the Card Game API to protect against malicious input.
+This document describes the comprehensive security measures implemented in the Card Game API, including input validation, container security, and runtime protection.
 
 ## Input Validation and Sanitization
 
@@ -218,3 +218,120 @@ Comprehensive validation tests are included in `validation_test.go`:
 - Sanitization behavior verification
 
 Run tests with: `go test -v validation_test.go main.go card.go`
+
+## Container Security
+
+### Secure Docker Image
+
+The application uses a hardened Docker image with multiple security layers:
+
+1. **Multi-Stage Build**
+   - Build stage runs as non-root user (UID 1001)
+   - Dependencies verified with `go mod verify`
+   - Minimal final image with only runtime requirements
+
+2. **Runtime Security**
+   - Runs as non-root user (UID 65532)
+   - Read-only root filesystem
+   - No shell access (`/sbin/nologin`)
+   - Minimal Alpine base with security updates
+   - Static files have read-only permissions (444)
+
+3. **Security Labels**
+   ```dockerfile
+   LABEL security.scan="true" \
+         security.nonroot="true" \
+         security.updates="auto"
+   ```
+
+### Security Scanning
+
+Comprehensive security scanning is integrated into the build process:
+
+```bash
+# Run all security scans
+make security-scan
+
+# Components scanned:
+# 1. Vulnerability scan with Trivy
+# 2. Secret detection with TruffleHog
+# 3. Dockerfile linting with Hadolint
+# 4. Dependency checking
+# 5. SBOM generation with Syft
+```
+
+### Runtime Protection
+
+#### Docker Compose Security
+- **Read-only filesystem**: Prevents runtime modifications
+- **Dropped capabilities**: Only NET_BIND_SERVICE retained
+- **No new privileges**: Prevents privilege escalation
+- **Security profiles**: AppArmor and Seccomp enabled
+- **Resource limits**: CPU, memory, and PID limits
+- **Network isolation**: Custom bridge network
+- **Localhost binding**: Ports bound to 127.0.0.1 only
+
+#### Kubernetes Security
+- **Pod Security Standards**: Restricted profile
+- **Network Policies**: Ingress/egress controls
+- **RBAC**: Minimal service account permissions
+- **Security Context**: Non-root, read-only filesystem
+- **Resource Quotas**: Prevent resource exhaustion
+
+### Secrets Management
+
+1. **Docker Secrets**
+   ```bash
+   # Generate secrets
+   ./scripts/generate-secrets.sh
+   
+   # Use with Docker Compose
+   docker-compose -f docker-compose.secrets.yml up
+   ```
+
+2. **Environment Variables**
+   - Secrets loaded from files, not environment
+   - Reference via `/run/secrets/` mount
+   - Read-only access (mode 0400)
+
+3. **Kubernetes Secrets**
+   ```yaml
+   valueFrom:
+     secretKeyRef:
+       name: cardgame-secrets
+       key: api-key
+   ```
+
+### Security Monitoring
+
+1. **Runtime Monitoring**
+   - Falco integration for anomaly detection
+   - Audit logging of all API access
+   - Structured JSON logs for SIEM integration
+
+2. **Vulnerability Management**
+   - Weekly image rebuilds
+   - Automated CVE scanning
+   - Dependency update notifications
+
+### Security Checklist
+
+Before deploying:
+- [ ] Run security scans: `make security-scan`
+- [ ] Review scan results for HIGH/CRITICAL issues
+- [ ] Generate fresh secrets
+- [ ] Enable read-only filesystem
+- [ ] Configure network policies
+- [ ] Set resource limits
+- [ ] Enable audit logging
+- [ ] Configure TLS/HTTPS
+- [ ] Implement rate limiting
+- [ ] Review RBAC permissions
+
+### Compliance Support
+
+The security implementation supports:
+- **CIS Docker Benchmark**: Hardened container configuration
+- **NIST Guidelines**: Defense in depth approach
+- **OWASP Top 10**: Protection against common vulnerabilities
+- **PCI DSS**: Secure configuration and access controls

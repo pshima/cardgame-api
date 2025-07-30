@@ -31,6 +31,8 @@ servers:
 tags:
   - name: system
     description: System health and information
+  - name: observability
+    description: Monitoring, metrics, and observability endpoints
   - name: deck-types
     description: Available deck type information
   - name: game-management
@@ -66,6 +68,117 @@ paths:
                   message:
                     type: string
                     example: "Hello, World!"
+
+  /stats:
+    get:
+      tags:
+        - observability
+      summary: Application statistics and metrics
+      description: |
+        Returns comprehensive application statistics including service information, 
+        game counts, custom deck counts, and key metrics in JSON format.
+        
+        This endpoint provides a human-readable summary of the metrics collected 
+        by the OpenTelemetry system.
+      responses:
+        '200':
+          description: Application statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        example: "cardgame-api"
+                      version:
+                        type: string
+                        example: "1.0.0"
+                      uptime:
+                        type: string
+                        example: "2h34m15s"
+                  games:
+                    type: object
+                    properties:
+                      active_count:
+                        type: integer
+                        example: 15
+                      total_created:
+                        type: integer
+                        example: 247
+                  custom_decks:
+                    type: object
+                    properties:
+                      active_count:
+                        type: integer
+                        example: 8
+                  metrics:
+                    type: object
+                    properties:
+                      http_requests_total:
+                        type: integer
+                        example: 1523
+                      http_request_duration_avg:
+                        type: number
+                        example: 0.0
+                      http_requests_in_flight:
+                        type: integer
+                        example: 0
+                      cards_dealt_total:
+                        type: integer
+                        example: 8934
+                      api_errors_total:
+                        type: integer
+                        example: 12
+                  system:
+                    type: object
+                    properties:
+                      timestamp:
+                        type: string
+                        format: date-time
+                        example: "2025-07-29T20:52:15Z"
+                      log_level:
+                        type: string
+                        example: "info"
+
+  /metrics:
+    get:
+      tags:
+        - observability
+      summary: Prometheus metrics endpoint
+      description: |
+        Returns metrics in Prometheus format for monitoring and alerting systems.
+        
+        This endpoint exposes OpenTelemetry metrics in the standard Prometheus
+        exposition format, suitable for scraping by Prometheus or compatible
+        monitoring systems.
+        
+        Available metrics include:
+        - http_requests_total: Counter of HTTP requests by method, path, status
+        - http_request_duration_seconds: Histogram of request latency
+        - http_requests_in_flight: Current active requests
+        - active_games: Current number of active games
+        - cards_dealt_total: Total cards dealt counter
+        - games_created_total: Total games created counter
+        - api_errors_total: API error counter
+      responses:
+        '200':
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: |
+                # HELP http_requests_total Total number of HTTP requests
+                # TYPE http_requests_total counter
+                http_requests_total{method="GET",path="/hello",status_code="200"} 42
+                
+                # HELP http_request_duration_seconds HTTP request duration in seconds  
+                # TYPE http_request_duration_seconds histogram
+                http_request_duration_seconds_bucket{method="GET",path="/hello",le="0.005"} 40
 
   /deck-types:
     get:

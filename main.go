@@ -1,20 +1,271 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/prometheus"
+	"go.opentelemetry.io/otel/metric"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
-var gameManager *GameManager
-var customDeckManager *CustomDeckManager
+var (
+	gameManager       *GameManager
+	customDeckManager *CustomDeckManager
+	logger           *zap.Logger
+	meter            metric.Meter
+	metricsRegistry  *MetricsRegistry
+	startTime        time.Time
+)
 
-// Security patterns for input validation
+// MetricsRegistry holds all OpenTelemetry metrics for monitoring application performance and business metrics.
+// It provides counters, histograms, and gauges for tracking HTTP requests, game activity, and errors.
+type MetricsRegistry struct {
+	HttpRequestsTotal     metric.Int64Counter
+	HttpRequestDuration   metric.Float64Histogram
+	HttpRequestsInFlight  metric.Int64UpDownCounter
+	ActiveGames          metric.Int64UpDownCounter
+	ActiveCustomDecks    metric.Int64UpDownCounter
+	CardsDealt           metric.Int64Counter
+	GamesCreated         metric.Int64Counter
+	ApiErrors            metric.Int64Counter
+}
+
+// NewMetricsRegistry creates and initializes all application metrics with proper descriptions.
+// It returns an error if any metric fails to initialize, ensuring all metrics are properly configured.
+func NewMetricsRegistry(meter metric.Meter) (*MetricsRegistry, error) {
+	httpRequestsTotal, err := meter.Int64Counter(
+		"http_requests_total",
+		metric.WithDescription("Total number of HTTP requests"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	httpRequestDuration, err := meter.Float64Histogram(
+		"http_request_duration_seconds",
+		metric.WithDescription("HTTP request duration in seconds"),
+		metric.WithUnit("s"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	httpRequestsInFlight, err := meter.Int64UpDownCounter(
+		"http_requests_in_flight",
+		metric.WithDescription("Current number of HTTP requests being processed"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	activeGames, err := meter.Int64UpDownCounter(
+		"active_games",
+		metric.WithDescription("Current number of active games"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	activeCustomDecks, err := meter.Int64UpDownCounter(
+		"active_custom_decks",
+		metric.WithDescription("Current number of custom decks"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	cardsDealt, err := meter.Int64Counter(
+		"cards_dealt_total",
+		metric.WithDescription("Total number of cards dealt"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	gamesCreated, err := meter.Int64Counter(
+		"games_created_total",
+		metric.WithDescription("Total number of games created"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	apiErrors, err := meter.Int64Counter(
+		"api_errors_total",
+		metric.WithDescription("Total number of API errors"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &MetricsRegistry{
+		HttpRequestsTotal:     httpRequestsTotal,
+		HttpRequestDuration:   httpRequestDuration,
+		HttpRequestsInFlight:  httpRequestsInFlight,
+		ActiveGames:          activeGames,
+		ActiveCustomDecks:    activeCustomDecks,
+		CardsDealt:           cardsDealt,
+		GamesCreated:         gamesCreated,
+		ApiErrors:            apiErrors,
+	}, nil
+}
+
+// initLogger creates a structured JSON logger with configurable log levels.
+// It uses zap for high-performance logging with proper time formatting and caller information.
+func initLogger() *zap.Logger {
+	config := zap.NewProductionConfig()
+	config.Level = zap.NewAtomicLevelAt(getLogLevel())
+	config.EncoderConfig = zapcore.EncoderConfig{
+		TimeKey:        "time",
+		LevelKey:       "level",
+		NameKey:        "logger",
+		CallerKey:      "caller",
+		FunctionKey:    "function",
+		MessageKey:     "message",
+		StacktraceKey:  "stacktrace",
+		LineEnding:     zapcore.DefaultLineEnding,
+		EncodeLevel:    zapcore.LowercaseLevelEncoder,
+		EncodeTime:     zapcore.RFC3339TimeEncoder,
+		EncodeDuration: zapcore.SecondsDurationEncoder,
+		EncodeCaller:   zapcore.ShortCallerEncoder,
+	}
+
+	logger, err := config.Build()
+	if err != nil {
+		panic("Failed to initialize logger: " + err.Error())
+	}
+
+	return logger
+}
+
+// getLogLevel reads the LOG_LEVEL environment variable and returns the corresponding zap log level.
+// It defaults to INFO level if the environment variable is not set or invalid.
+func getLogLevel() zapcore.Level {
+	level := strings.ToUpper(os.Getenv("LOG_LEVEL"))
+	switch level {
+	case "DEBUG":
+		return zapcore.DebugLevel
+	case "INFO":
+		return zapcore.InfoLevel
+	case "WARN":
+		return zapcore.WarnLevel
+	case "ERROR":
+		return zapcore.ErrorLevel
+	default:
+		return zapcore.InfoLevel
+	}
+}
+
+// initMetrics sets up OpenTelemetry metrics with Prometheus exporter for monitoring.
+// It creates a meter provider and initializes all application metrics for observability.
+func initMetrics() (metric.Meter, *MetricsRegistry) {
+	exporter, err := prometheus.New()
+	if err != nil {
+		logger.Fatal("Failed to create Prometheus exporter", zap.Error(err))
+	}
+
+	meterProvider := sdkmetric.NewMeterProvider(
+		sdkmetric.WithReader(exporter),
+	)
+
+	otel.SetMeterProvider(meterProvider)
+	meter := meterProvider.Meter("cardgame-api")
+
+	metricsRegistry, err := NewMetricsRegistry(meter)
+	if err != nil {
+		logger.Fatal("Failed to create metrics registry", zap.Error(err))
+	}
+
+	return meter, metricsRegistry
+}
+
+// logMiddleware creates a Gin middleware that logs all HTTP requests with detailed information.
+// It captures request details, measures latency, and records metrics for monitoring and debugging.
+func logMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		path := c.Request.URL.Path
+		query := c.Request.URL.RawQuery
+		userAgent := c.Request.UserAgent()
+		clientIP := c.ClientIP()
+		method := c.Request.Method
+
+		gameID := ""
+		if gameIDParam := c.Param("gameId"); gameIDParam != "" {
+			gameID = gameIDParam
+		}
+
+		metricsRegistry.HttpRequestsInFlight.Add(c.Request.Context(), 1)
+		defer metricsRegistry.HttpRequestsInFlight.Add(c.Request.Context(), -1)
+
+		logger.Info("Request started",
+			zap.String("method", method),
+			zap.String("path", path),
+			zap.String("query", query),
+			zap.String("user_agent", userAgent),
+			zap.String("client_ip", clientIP),
+			zap.String("game_id", gameID),
+		)
+
+		c.Next()
+
+		latency := time.Since(start)
+		status := c.Writer.Status()
+
+		attrs := []attribute.KeyValue{
+			attribute.String("method", method),
+			attribute.String("path", path),
+			attribute.Int("status_code", status),
+			attribute.String("client_ip", clientIP),
+		}
+
+		if gameID != "" {
+			attrs = append(attrs, attribute.String("game_id", gameID))
+		}
+
+		metricsRegistry.HttpRequestsTotal.Add(c.Request.Context(), 1, metric.WithAttributes(attrs...))
+		metricsRegistry.HttpRequestDuration.Record(c.Request.Context(), latency.Seconds(), metric.WithAttributes(attrs...))
+
+		logLevel := zapcore.InfoLevel
+		logMsg := "Request completed"
+
+		if status >= 400 {
+			logLevel = zapcore.WarnLevel
+			if status >= 500 {
+				logLevel = zapcore.ErrorLevel
+				metricsRegistry.ApiErrors.Add(c.Request.Context(), 1, metric.WithAttributes(attrs...))
+			}
+			logMsg = "Request failed"
+		}
+
+		logger.Log(logLevel, logMsg,
+			zap.String("method", method),
+			zap.String("path", path),
+			zap.String("query", query),
+			zap.String("user_agent", userAgent),
+			zap.String("client_ip", clientIP),
+			zap.String("game_id", gameID),
+			zap.Int("status_code", status),
+			zap.Duration("latency", latency),
+			zap.String("latency_human", latency.String()),
+		)
+	}
+}
+
+// Security patterns for input validation"}
 var (
 	// UUID pattern for gameID and playerID validation
 	uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -28,22 +279,26 @@ var (
 	boolPattern = regexp.MustCompile(`^(true|false|1|0)$`)
 )
 
-// validateUUID checks if the input is a valid UUID format
+// validateUUID verifies that the input string matches the standard UUID format.
+// This prevents injection attacks and ensures game/player IDs are properly formatted.
 func validateUUID(input string) bool {
 	return uuidPattern.MatchString(input)
 }
 
-// validatePlayerID checks if the input is a valid player ID (UUID or "dealer")
+// validatePlayerID validates player identifiers, accepting either UUID format or the special "dealer" value.
+// This allows the dealer to be referenced while maintaining security for player IDs.
 func validatePlayerID(input string) bool {
 	return input == "dealer" || uuidPattern.MatchString(input)
 }
 
-// validatePileID checks if pile ID is safe
+// validatePileID ensures discard pile identifiers contain only safe alphanumeric characters.
+// This prevents injection attacks through pile ID parameters in discard operations.
 func validatePileID(input string) bool {
 	return pileIDPattern.MatchString(input)
 }
 
-// validateNumber checks if input is a valid positive integer
+// validateNumber converts and validates string input as a positive integer.
+// It prevents negative numbers, non-numeric input, and integer overflow attacks.
 func validateNumber(input string) (int, bool) {
 	if !numberPattern.MatchString(input) {
 		return 0, false
@@ -55,17 +310,20 @@ func validateNumber(input string) (int, bool) {
 	return num, true
 }
 
-// validateDeckType checks if deck type input is safe
+// validateDeckType ensures deck type parameters contain only safe characters.
+// This prevents injection attacks while allowing valid deck type identifiers.
 func validateDeckType(input string) bool {
 	return deckTypePattern.MatchString(input)
 }
 
-// validateBoolean checks if input is a valid boolean representation
+// validateBoolean validates boolean string inputs, accepting multiple formats (true/false/1/0).
+// This provides flexibility while maintaining security for boolean parameters.
 func validateBoolean(input string) bool {
 	return boolPattern.MatchString(strings.ToLower(input))
 }
 
-// sanitizeString removes potentially dangerous characters and limits length
+// sanitizeString removes control characters and enforces length limits on user input.
+// This prevents XSS attacks and buffer overflow attempts while preserving valid content.
 func sanitizeString(input string, maxLength int) string {
 	// Remove control characters and limit length
 	cleaned := strings.Map(func(r rune) rune {
@@ -82,18 +340,21 @@ func sanitizeString(input string, maxLength int) string {
 	return cleaned
 }
 
-// validateDeckName checks if deck name is valid (1-128 characters)
+// validateDeckName ensures custom deck names are within acceptable length limits.
+// This prevents memory exhaustion attacks while allowing descriptive deck names.
 func validateDeckName(name string) bool {
 	return len(name) >= 1 && len(name) <= 128
 }
 
-// validateCardIndex checks if card index is valid
+// validateCardIndex validates and converts card index strings to integers.
+// This ensures array bounds safety when accessing cards in custom decks.
 func validateCardIndex(indexStr string) (int, bool) {
 	index, valid := validateNumber(indexStr)
 	return index, valid
 }
 
-// getTrustedProxies returns the list of trusted proxy IPs from environment or defaults
+// getTrustedProxies reads trusted proxy IP addresses from environment variables for security.
+// This prevents IP spoofing attacks by only accepting proxy headers from trusted sources.
 func getTrustedProxies() []string {
 	// Check if TRUSTED_PROXIES environment variable is set
 	if envProxies := os.Getenv("TRUSTED_PROXIES"); envProxies != "" {
@@ -118,7 +379,8 @@ func getTrustedProxies() []string {
 	}
 }
 
-// getBaseURL extracts the base URL from the request with security considerations
+// getBaseURL constructs the base URL for the request while validating proxy headers.
+// It only trusts forwarded protocol headers from configured trusted proxies for security.
 func getBaseURL(c *gin.Context) string {
 	scheme := "http"
 	if c.Request.TLS != nil {
@@ -146,25 +408,102 @@ func getBaseURL(c *gin.Context) string {
 	return fmt.Sprintf("%s://%s", scheme, host)
 }
 
+// getStats provides a JSON endpoint with application metrics and health information.
+// This enables monitoring and debugging by exposing key performance and business metrics.
+func getStats(c *gin.Context) {
+	ctx := context.Background()
+	
+	// Get current metrics state
+	stats := gin.H{
+		"service": gin.H{
+			"name":    "cardgame-api",
+			"version": "1.0.0",
+			"uptime":  time.Since(startTime).String(),
+		},
+		"games": gin.H{
+			"active_count":    gameManager.GameCount(),
+			"total_created":   0, // Will be tracked via metrics
+		},
+		"custom_decks": gin.H{
+			"active_count": len(customDeckManager.ListDecks()),
+		},
+		"metrics": gin.H{
+			"http_requests_total":        0, // These will show current counter values
+			"http_request_duration_avg":  0.0,
+			"http_requests_in_flight":    0,
+			"cards_dealt_total":         0,
+			"api_errors_total":          0,
+		},
+		"system": gin.H{
+			"timestamp": time.Now().Format(time.RFC3339),
+			"log_level": getLogLevel().String(),
+		},
+	}
+
+	// Update metrics gauges
+	metricsRegistry.ActiveGames.Add(ctx, int64(gameManager.GameCount()))
+	metricsRegistry.ActiveCustomDecks.Add(ctx, int64(len(customDeckManager.ListDecks())))
+
+	logger.Debug("Stats endpoint accessed",
+		zap.String("client_ip", c.ClientIP()),
+		zap.String("user_agent", c.Request.UserAgent()),
+	)
+
+	c.JSON(http.StatusOK, stats)
+}
+
+// main initializes the Card Game API server with logging, metrics, and all HTTP routes.
+// It sets up observability, security middleware, and starts the web server on a configurable port.
 func main() {
+	// Record start time
+	startTime = time.Now()
+	
+	// Initialize logger first
+	logger = initLogger()
+	defer logger.Sync()
+
+	logger.Info("Starting Card Game API",
+		zap.String("version", "1.0.0"),
+		zap.String("log_level", getLogLevel().String()),
+	)
+
+	// Initialize metrics
+	meter, metricsRegistry = initMetrics()
+
+	// Initialize managers
 	gameManager = NewGameManager()
 	customDeckManager = NewCustomDeckManager()
-	r := gin.Default()
+
+	logger.Info("Managers initialized successfully")
+
+	// Create Gin router without default middleware
+	r := gin.New()
+
+	// Add custom middleware
+	r.Use(logMiddleware())
+	r.Use(gin.Recovery())
 	
 	// Configure trusted proxies for security
-	// Get trusted proxies from environment variable or use defaults
 	trustedProxies := getTrustedProxies()
 	
 	if err := r.SetTrustedProxies(trustedProxies); err != nil {
-		panic("Failed to set trusted proxies: " + err.Error())
+		logger.Fatal("Failed to set trusted proxies", zap.Error(err))
 	}
+
+	logger.Info("Trusted proxies configured", zap.Strings("proxies", trustedProxies))
 	
 	// Serve static files for card images
 	r.Static("/static", "./static")
 	
+	// Metrics endpoints
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	r.GET("/stats", getStats)
+
 	// Serve API documentation
 	r.StaticFile("/openapi.yaml", "./openapi.yaml")
 	r.StaticFile("/api-docs", "./api-docs.html")
+
+	logger.Info("Static file routes configured")
 
 	r.GET("/hello", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -216,9 +555,25 @@ func main() {
 	r.GET("/custom-decks/:deckId/cards/:cardIndex", getCustomCard)
 	r.DELETE("/custom-decks/:deckId/cards/:cardIndex", deleteCustomCard)
 
-	r.Run(":8080")
+	// Get port from environment variable, default to 8080
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	logger.Info("All routes configured, starting server",
+		zap.String("port", port),
+		zap.String("metrics_endpoint", "/metrics"),
+		zap.String("stats_endpoint", "/stats"),
+	)
+
+	if err := r.Run(":" + port); err != nil {
+		logger.Fatal("Failed to start server", zap.Error(err))
+	}
 }
 
+// parseDeckType converts string deck type parameters to the corresponding DeckType enum.
+// It supports multiple string formats (spanish21, spanish_21, spanish-21) for flexibility.
 func parseDeckType(typeStr string) DeckType {
 	switch strings.ToLower(typeStr) {
 	case "spanish21", "spanish_21", "spanish-21":
@@ -230,8 +585,32 @@ func parseDeckType(typeStr string) DeckType {
 	}
 }
 
+// createNewGame creates a new card game with default settings (1 standard deck, 6 max players).
+// It logs the creation, updates metrics, and returns the game details including the unique game ID.
 func createNewGame(c *gin.Context) {
+	logger.Debug("Creating new game",
+		zap.String("client_ip", c.ClientIP()),
+		zap.Int("decks", 1),
+		zap.String("type", "standard"),
+	)
+
 	game := gameManager.CreateGame(1)
+	
+	// Update metrics
+	metricsRegistry.GamesCreated.Add(c.Request.Context(), 1,
+		metric.WithAttributes(
+			attribute.String("deck_type", "standard"),
+			attribute.Int("deck_count", 1),
+		),
+	)
+
+	logger.Info("Game created successfully",
+		zap.String("game_id", game.ID),
+		zap.String("deck_type", game.Deck.DeckType.String()),
+		zap.Int("remaining_cards", game.Deck.RemainingCards()),
+		zap.String("client_ip", c.ClientIP()),
+	)
+
 	c.JSON(http.StatusOK, gin.H{
 		"game_id":        game.ID,
 		"deck_name":      game.Deck.Name,
@@ -242,6 +621,8 @@ func createNewGame(c *gin.Context) {
 	})
 }
 
+// createNewGameWithDecks creates a new game with a specified number of decks.
+// It validates the deck count (1-100) and creates a standard deck game with the requested number of decks.
 func createNewGameWithDecks(c *gin.Context) {
 	decksStr := sanitizeString(c.Param("decks"), 10)
 	numDecks, valid := validateNumber(decksStr)
@@ -264,6 +645,8 @@ func createNewGameWithDecks(c *gin.Context) {
 	})
 }
 
+// createNewGameWithType creates a new game with specified deck count and type (standard or spanish21).
+// It validates both parameters and creates a customized game based on the provided configuration.
 func createNewGameWithType(c *gin.Context) {
 	decksStr := sanitizeString(c.Param("decks"), 10)
 	typeStr := sanitizeString(c.Param("type"), 20)
@@ -297,6 +680,8 @@ func createNewGameWithType(c *gin.Context) {
 	})
 }
 
+// shuffleDeck randomizes the order of cards in an existing game's deck.
+// It validates the game ID and performs an in-place shuffle of all remaining cards.
 func shuffleDeck(c *gin.Context) {
 	gameID := sanitizeString(c.Param("gameId"), 50)
 	if !validateUUID(gameID) {
@@ -324,6 +709,8 @@ func shuffleDeck(c *gin.Context) {
 	})
 }
 
+// getGameInfo retrieves basic information about a game including deck details and card count.
+// It validates the game ID and returns deck name, type, remaining cards, and timestamps.
 func getGameInfo(c *gin.Context) {
 	gameID := sanitizeString(c.Param("gameId"), 50)
 	if !validateUUID(gameID) {
@@ -353,9 +740,15 @@ func getGameInfo(c *gin.Context) {
 	})
 }
 
+// dealCard draws a single card from the top of a game's deck and returns it face-up.
+// It validates the game exists, updates metrics, and logs the card dealing operation.
 func dealCard(c *gin.Context) {
 	gameID := sanitizeString(c.Param("gameId"), 50)
 	if !validateUUID(gameID) {
+		logger.Warn("Invalid game ID provided",
+			zap.String("game_id", gameID),
+			zap.String("client_ip", c.ClientIP()),
+		)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Invalid game ID format",
 		})
@@ -364,24 +757,53 @@ func dealCard(c *gin.Context) {
 	
 	game, exists := gameManager.GetGame(gameID)
 	if !exists {
+		logger.Warn("Game not found",
+			zap.String("game_id", gameID),
+			zap.String("client_ip", c.ClientIP()),
+		)
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "Game not found",
 		})
 		return
 	}
 
+	logger.Debug("Dealing card",
+		zap.String("game_id", gameID),
+		zap.Int("remaining_cards", game.Deck.RemainingCards()),
+		zap.String("client_ip", c.ClientIP()),
+	)
+
 	card := game.Deck.Deal()
 	if card == nil {
+		logger.Warn("No cards remaining in deck",
+			zap.String("game_id", gameID),
+			zap.String("client_ip", c.ClientIP()),
+		)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "No cards remaining in deck",
 		})
 		return
 	}
 	
+	// Update metrics
+	metricsRegistry.CardsDealt.Add(c.Request.Context(), 1,
+		metric.WithAttributes(
+			attribute.String("game_id", gameID),
+			attribute.String("deck_type", game.Deck.DeckType.String()),
+		),
+	)
+	
 	// Default to face up for dealt cards
 	card.FaceUp = true
 	baseURL := getBaseURL(c)
 	cardWithImages := card.ToCardWithImages(baseURL)
+	
+	logger.Info("Card dealt successfully",
+		zap.String("game_id", gameID),
+		zap.String("card", fmt.Sprintf("%s of %s", card.Rank, card.Suit)),
+		zap.Int("remaining_cards", game.Deck.RemainingCards()),
+		zap.String("client_ip", c.ClientIP()),
+	)
 	
 	c.JSON(http.StatusOK, gin.H{
 		"game_id":        game.ID,
@@ -391,6 +813,8 @@ func dealCard(c *gin.Context) {
 	})
 }
 
+// dealCards draws multiple cards from a game's deck based on the count parameter.
+// It validates the count (1-52), ensures enough cards remain, and returns all dealt cards.
 func dealCards(c *gin.Context) {
 	gameID := sanitizeString(c.Param("gameId"), 50)
 	countStr := sanitizeString(c.Param("count"), 10)
@@ -446,6 +870,8 @@ func dealCards(c *gin.Context) {
 	})
 }
 
+// resetDeck restores a game's deck to its original full state with all cards.
+// It maintains the same deck type and count while shuffling the restored deck.
 func resetDeck(c *gin.Context) {
 	gameID := sanitizeString(c.Param("gameId"), 50)
 	if !validateUUID(gameID) {

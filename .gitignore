@@ -35,3 +35,34 @@ go.mod
 go.sum
 
 cardgame-api
+cardgame-api-test
+
+# Secrets - NEVER commit these!
+secrets/*.txt
+secrets/*.key
+secrets/*.pem
+secrets/*.crt
+
+# Environment files
+.env.local
+.env.*.local
+
+# Temporary files
+tmp/
+*.tmp
+*.log
+
+# Air hot-reload
+.air/
+
+# Build artifacts
+dist/
+build/
+
+# SBOM files (regenerate as needed)
+sbom.json
+sbom.xml
+
+# OS files
+.DS_Store
+Thumbs.db

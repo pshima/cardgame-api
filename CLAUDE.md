@@ -199,3 +199,9 @@ This is a comprehensive Card Game API built with Go and the Gin web framework. T
 
 ## Best Practices
 - Always update the openapi documentation whenever the api changes
+
+## Code Guidelines
+- If you add new functions or classes, make sure to add code comments, 1-3 lines describing what it does and why it is needed
+
+## Security Considerations
+- Make sure to take security considerations in for all updates

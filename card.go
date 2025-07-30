@@ -9,23 +9,29 @@ import (
 	"github.com/google/uuid"
 )
 
+// DeckType represents the different types of card decks supported by the API.
+// Each deck type has different card compositions and rules for gameplay.
 type DeckType int
 
 const (
-	Standard DeckType = iota
-	Spanish21
+	Standard DeckType = iota  // Standard 52-card deck with all ranks 1-13
+	Spanish21                 // Spanish 21 deck with 48 cards (no 10s)
 )
 
+// GameType represents the different card games supported by the API.
+// Each game type has specific rules and gameplay mechanics implemented.
 type GameType int
 
 const (
-	Blackjack GameType = iota
-	Poker
-	War
-	GoFish
-	Cribbage
+	Blackjack GameType = iota  // Blackjack with dealer and automatic gameplay
+	Poker                      // Poker game support
+	War                        // War card game
+	GoFish                     // Go Fish game
+	Cribbage                   // Cribbage with full scoring and pegging
 )
 
+// String returns the string representation of a DeckType for API responses.
+// This provides human-readable deck type names in JSON responses.
 func (dt DeckType) String() string {
 	switch dt {
 	case Standard:
@@ -37,6 +43,8 @@ func (dt DeckType) String() string {
 	}
 }
 
+// String returns the string representation of a GameType for API responses.
+// This provides human-readable game type names in JSON responses.
 func (gt GameType) String() string {
 	switch gt {
 	case Blackjack:
@@ -54,6 +62,8 @@ func (gt GameType) String() string {
 	}
 }
 
+// Description returns a detailed explanation of what each deck type contains.
+// This helps users understand the differences between deck types in API documentation.
 func (dt DeckType) Description() string {
 	switch dt {
 	case Standard:
@@ -65,6 +75,8 @@ func (dt DeckType) Description() string {
 	}
 }
 
+// CardsPerDeck returns the number of cards in each deck type.
+// This is used for deck initialization and game logic calculations.
 func (dt DeckType) CardsPerDeck() int {
 	switch dt {
 	case Standard:
@@ -76,10 +88,14 @@ func (dt DeckType) CardsPerDeck() int {
 	}
 }
 
+// GetAllDeckTypes returns all supported deck types for API enumeration.
+// This enables the /deck-types endpoint to list all available options.
 func GetAllDeckTypes() []DeckType {
 	return []DeckType{Standard, Spanish21}
 }
 
+// safeAdjectives contains family-friendly words used for generating random deck names.
+// These adjectives are combined with nouns to create unique, memorable deck identifiers.
 var safeAdjectives = []string{
 	"Amazing", "Bright", "Clever", "Daring", "Eager", "Friendly", "Gentle", "Happy", "Jolly", "Kind",
 	"Lucky", "Magic", "Noble", "Peaceful", "Quick", "Royal", "Smart", "Trusty", "Unique", "Wise",
@@ -90,6 +106,8 @@ var safeAdjectives = []string{
 	"Shining", "Singing", "Sparkling", "Sunny", "Swift", "Talented", "Vibrant", "Winning", "Zealous", "Cheerful",
 }
 
+// safeNouns contains family-friendly words used for generating random deck names.
+// These nouns are combined with adjectives to create unique, memorable deck identifiers.
 var safeNouns = []string{
 	"Dragon", "Phoenix", "Eagle", "Tiger", "Lion", "Wolf", "Bear", "Fox", "Hawk", "Owl",
 	"Star", "Moon", "Sun", "Cloud", "River", "Ocean", "Mountain", "Forest", "Garden", "Castle",
@@ -100,15 +118,19 @@ var safeNouns = []string{
 	"Magic", "Wonder", "Spirit", "Power", "Force", "Energy", "Light", "Flame", "Spark", "Glow",
 }
 
+// Suit represents the four traditional playing card suits.
+// Used for card identification and game logic in various card games.
 type Suit int
 
 const (
-	Hearts Suit = iota
-	Diamonds
-	Clubs
-	Spades
+	Hearts Suit = iota  // ♥ Red suit
+	Diamonds            // ♦ Red suit
+	Clubs               // ♣ Black suit  
+	Spades              // ♠ Black suit
 )
 
+// String returns the name of the suit for display purposes.
+// This provides human-readable suit names for API responses and card images.
 func (s Suit) String() string {
 	switch s {
 	case Hearts:
@@ -124,6 +146,8 @@ func (s Suit) String() string {
 	}
 }
 
+// Rank represents the numerical value of a playing card (1-13).
+// Ace=1, numbered cards=face value, Jack=11, Queen=12, King=13.
 type Rank int
 
 const (
@@ -142,6 +166,8 @@ const (
 	King
 )
 
+// String returns the display name for card ranks.
+// Face cards return names (Ace, Jack, Queen, King) while number cards return their numeric value.
 func (r Rank) String() string {
 	switch r {
 	case Ace:
@@ -157,13 +183,16 @@ func (r Rank) String() string {
 	}
 }
 
+// Card represents a single playing card with rank, suit, and visibility.
+// FaceUp determines whether the card is visible to players or hidden (like dealer's hole card).
 type Card struct {
 	Rank   Rank `json:"rank"`
 	Suit   Suit `json:"suit"`
 	FaceUp bool `json:"face_up"`
 }
 
-// CardWithImages extends Card with image URLs
+// CardWithImages extends Card with URLs to generated card images in multiple sizes.
+// This provides card visuals for web interfaces while maintaining all card data.
 type CardWithImages struct {
 	Rank   Rank              `json:"rank"`
 	Suit   Suit              `json:"suit"`
@@ -171,14 +200,20 @@ type CardWithImages struct {
 	Images map[string]string `json:"images,omitempty"`
 }
 
+// String returns a human-readable representation of the card.
+// Used for logging and debugging to identify specific cards.
 func (c Card) String() string {
 	return fmt.Sprintf("%s of %s", c.Rank, c.Suit)
 }
 
+// Value returns the base numeric value of the card (same as rank).
+// This is used for basic card comparisons and non-game-specific operations.
 func (c Card) Value() int {
 	return int(c.Rank)
 }
 
+// BlackjackValue returns the point value of the card in Blackjack.
+// Face cards are worth 10, Aces are 11 (soft value), and others are face value.
 func (c Card) BlackjackValue() int {
 	switch c.Rank {
 	case Jack, Queen, King:
@@ -190,6 +225,8 @@ func (c Card) BlackjackValue() int {
 	}
 }
 
+// CribbageValue returns the point value of the card in Cribbage.
+// Face cards are worth 10, Aces are 1, and others are face value for counting.
 func (c Card) CribbageValue() int {
 	switch c.Rank {
 	case Jack, Queen, King:
@@ -201,7 +238,8 @@ func (c Card) CribbageValue() int {
 	}
 }
 
-// ToCardWithImages converts a Card to CardWithImages with image URLs
+// ToCardWithImages converts a Card to CardWithImages with URLs for generated card images.
+// It creates URLs for three image sizes (icon, small, large) or shows card back if face down.
 func (c Card) ToCardWithImages(baseURL string) CardWithImages {
 	if baseURL == "" {
 		baseURL = "http://localhost:8080"
@@ -233,7 +271,8 @@ func (c Card) ToCardWithImages(baseURL string) CardWithImages {
 	}
 }
 
-// ToCardWithImagesPtr converts a *Card to CardWithImages
+// ToCardWithImagesPtr safely converts a Card pointer to CardWithImages with image URLs.
+// It handles nil pointers gracefully by returning an empty CardWithImages struct.
 func ToCardWithImagesPtr(c *Card, baseURL string) CardWithImages {
 	if c == nil {
 		return CardWithImages{}
@@ -241,6 +280,8 @@ func ToCardWithImagesPtr(c *Card, baseURL string) CardWithImages {
 	return c.ToCardWithImages(baseURL)
 }
 
+// generateDeckName creates a random, family-friendly name for new decks.
+// It combines a random adjective with a random noun to ensure memorable, unique names.
 func generateDeckName() string {
 	rand.Seed(time.Now().UnixNano())
 	adjective := safeAdjectives[rand.Intn(len(safeAdjectives))]
@@ -248,20 +289,28 @@ func generateDeckName() string {
 	return adjective + " " + noun
 }
 
+// Deck represents a collection of playing cards with metadata.
+// It maintains the card order for dealing and tracks the deck type for game rules.
 type Deck struct {
 	Cards    []Card   `json:"cards"`
 	Name     string   `json:"name"`
 	DeckType DeckType `json:"deck_type"`
 }
 
+// NewDeck creates a single standard 52-card deck.
+// This is a convenience function that calls NewMultiDeck with 1 deck.
 func NewDeck() *Deck {
 	return NewMultiDeck(1)
 }
 
+// NewMultiDeck creates a deck with multiple standard decks shuffled together.
+// This is commonly used in Blackjack where multiple decks reduce card counting effectiveness.
 func NewMultiDeck(numDecks int) *Deck {
 	return NewCustomDeck(numDecks, Standard)
 }
 
+// NewCustomDeck creates a deck with specified count and type (Standard or Spanish21).
+// It handles deck type differences like Spanish21 missing 10s and ensures proper card generation.
 func NewCustomDeck(numDecks int, deckType DeckType) *Deck {
 	if numDecks <= 0 {
 		numDecks = 1
@@ -281,14 +330,20 @@ func NewCustomDeck(numDecks int, deckType DeckType) *Deck {
 	return deck
 }
 
+// Reset restores the deck to a full single deck of the current type.
+// All cards are restored and the deck is shuffled, maintaining the current deck type.
 func (d *Deck) Reset() {
 	d.ResetWithDecks(1)
 }
 
+// ResetWithDecks restores the deck with a specified number of decks.
+// It maintains the current deck type while changing the number of deck copies.
 func (d *Deck) ResetWithDecks(numDecks int) {
 	d.ResetWithDecksAndType(numDecks, d.DeckType)
 }
 
+// ResetWithDecksAndType completely reconfigures the deck with new count and type.
+// This allows changing both the number of decks and the deck type (Standard/Spanish21).
 func (d *Deck) ResetWithDecksAndType(numDecks int, deckType DeckType) {
 	if numDecks <= 0 {
 		numDecks = 1
@@ -315,6 +370,8 @@ func (d *Deck) ResetWithDecksAndType(numDecks int, deckType DeckType) {
 	}
 }
 
+// Shuffle randomizes the order of all cards in the deck using Fisher-Yates algorithm.
+// This ensures fair card distribution and prevents predictable card sequences.
 func (d *Deck) Shuffle() {
 	rand.Seed(time.Now().UnixNano())
 	for i := len(d.Cards) - 1; i > 0; i-- {
@@ -323,6 +380,8 @@ func (d *Deck) Shuffle() {
 	}
 }
 
+// Deal removes and returns the top card from the deck.
+// Returns nil if the deck is empty, allowing callers to handle empty deck scenarios.
 func (d *Deck) Deal() *Card {
 	if len(d.Cards) == 0 {
 		return nil
@@ -332,24 +391,34 @@ func (d *Deck) Deal() *Card {
 	return &card
 }
 
+// RemainingCards returns the number of cards left in the deck.
+// This is used for game logic and API responses to show deck status.
 func (d *Deck) RemainingCards() int {
 	return len(d.Cards)
 }
 
+// IsEmpty checks if the deck has no cards remaining.
+// This is used to prevent dealing from empty decks and trigger deck resets.
 func (d *Deck) IsEmpty() bool {
 	return len(d.Cards) == 0
 }
 
+// Player represents a game participant with a unique ID, name, and hand of cards.
+// Players can be human users or the dealer, identified by UUID or "dealer" respectively.
 type Player struct {
 	ID   string  `json:"id"`
 	Name string  `json:"name"`
 	Hand []*Card `json:"hand"`
 }
 
+// AddCard adds a new card to the player's hand.
+// This is used when dealing cards or when players hit in blackjack.
 func (p *Player) AddCard(card *Card) {
 	p.Hand = append(p.Hand, card)
 }
 
+// RemoveCard removes and returns a card at the specified index from the player's hand.
+// Returns nil if the index is invalid, used for discarding cards to piles.
 func (p *Player) RemoveCard(cardIndex int) *Card {
 	if cardIndex < 0 || cardIndex >= len(p.Hand) {
 		return nil
@@ -359,16 +428,22 @@ func (p *Player) RemoveCard(cardIndex int) *Card {
 	return card
 }
 
+// HandSize returns the number of cards currently in the player's hand.
+// This is used for game logic and API responses to show hand status.
 func (p *Player) HandSize() int {
 	return len(p.Hand)
 }
 
+// ClearHand removes all cards from the player's hand and returns them.
+// This is used at the end of games to reset players for the next round.
 func (p *Player) ClearHand() []*Card {
 	cards := p.Hand
 	p.Hand = []*Card{}
 	return cards
 }
 
+// BlackjackHandValue calculates the optimal point value and detects blackjack.
+// Returns total points and whether the hand is a blackjack (21 with exactly 2 cards).
 func (p *Player) BlackjackHandValue() (int, bool) {
 	total := 0
 	aces := 0
@@ -393,17 +468,22 @@ func (p *Player) BlackjackHandValue() (int, bool) {
 	return total, blackjack
 }
 
+// IsBusted checks if the player's hand value exceeds 21 in blackjack.
+// A busted player automatically loses regardless of the dealer's hand.
 func (p *Player) IsBusted() bool {
 	value, _ := p.BlackjackHandValue()
 	return value > 21
 }
 
+// HasBlackjack checks if the player has a natural blackjack (21 with exactly 2 cards).
+// Blackjack beats a regular 21 and typically pays 3:2 in casino rules.
 func (p *Player) HasBlackjack() bool {
 	_, blackjack := p.BlackjackHandValue()
 	return blackjack
 }
 
-// Cribbage scoring functions
+// ScoreCribbageHand calculates the cribbage score for the player's hand plus starter card.
+// This implements standard cribbage scoring: fifteens, pairs, runs, flush, and nobs.
 func (p *Player) ScoreCribbageHand(starter *Card) int {
 	if len(p.Hand) == 0 {
 		return 0
@@ -419,12 +499,14 @@ func (p *Player) ScoreCribbageHand(starter *Card) int {
 	return ScoreCribbageCards(allCards)
 }
 
-// CribbagePlayValue returns the value during the play phase (same as cribbage value)
+// CribbagePlayValue returns the card's value during cribbage play phase.
+// This is used for pegging and reaching the count of 31 during play.
 func (c Card) CribbagePlayValue() int {
 	return c.CribbageValue()
 }
 
-// Global cribbage scoring functions
+// ScoreCribbageCards calculates the total cribbage score for a collection of cards.
+// This implements all cribbage scoring rules: fifteens, pairs, runs, flush, and nobs.
 func ScoreCribbageCards(cards []*Card) int {
 	if len(cards) == 0 {
 		return 0
@@ -615,6 +697,8 @@ func (dp *DiscardPile) TopCard() *Card {
 	return dp.Cards[len(dp.Cards)-1]
 }
 
+// TakeTopCard removes and returns the most recently discarded card from the pile.
+// Returns nil if the pile is empty, used for drawing from discard piles.
 func (dp *DiscardPile) TakeTopCard() *Card {
 	if len(dp.Cards) == 0 {
 		return nil
@@ -624,16 +708,22 @@ func (dp *DiscardPile) TakeTopCard() *Card {
 	return card
 }
 
+// Size returns the number of cards currently in the discard pile.
+// This is used for game logic and API responses to show pile status.
 func (dp *DiscardPile) Size() int {
 	return len(dp.Cards)
 }
 
+// Clear removes all cards from the discard pile and returns them.
+// This is used for reshuffling cards back into the deck or resetting games.
 func (dp *DiscardPile) Clear() []*Card {
 	cards := dp.Cards
 	dp.Cards = []*Card{}
 	return cards
 }
 
+// GameStatus represents the current state of a game session.
+// Used to control game flow and determine valid actions.
 type GameStatus int
 
 const (
@@ -642,6 +732,8 @@ const (
 	GameFinished
 )
 
+// String returns the string representation of the game status.
+// This is used in JSON responses and logging to show human-readable status.
 func (gs GameStatus) String() string {
 	switch gs {
 	case GameWaiting:
@@ -655,6 +747,8 @@ func (gs GameStatus) String() string {
 	}
 }
 
+// CribbagePhase represents the current phase of a cribbage game.
+// Cribbage has distinct phases with different rules and valid actions.
 type CribbagePhase int
 
 const (
@@ -665,6 +759,8 @@ const (
 	CribbageFinished
 )
 
+// String returns the string representation of the cribbage phase.
+// This is used in JSON responses to show the current phase of cribbage gameplay.
 func (cp CribbagePhase) String() string {
 	switch cp {
 	case CribbageDeal:
@@ -682,6 +778,8 @@ func (cp CribbagePhase) String() string {
 	}
 }
 
+// CribbageState holds all game state specific to cribbage gameplay.
+// This includes phase tracking, scoring, and the crib collection.
 type CribbageState struct {
 	Phase         CribbagePhase `json:"phase"`
 	Dealer        int           `json:"dealer"`
@@ -696,6 +794,8 @@ type CribbageState struct {
 	LastToPlay    int           `json:"last_to_play"`
 }
 
+// Game represents a complete card game session with players, deck, and game state.
+// It supports multiple game types (Blackjack, Cribbage) and manages all game operations.
 type Game struct {
 	ID           string                  `json:"id"`
 	GameType     GameType                `json:"game_type"`
@@ -711,14 +811,20 @@ type Game struct {
 	LastUsed     time.Time               `json:"last_used"`
 }
 
+// NewGame creates a new blackjack game with the specified number of standard decks.
+// This is a convenience function that defaults to standard 52-card decks.
 func NewGame(numDecks int) *Game {
 	return NewCustomGame(numDecks, Standard)
 }
 
+// NewCustomGame creates a new blackjack game with specified deck count and type.
+// This allows using different deck types like Spanish21 while defaulting to blackjack.
 func NewCustomGame(numDecks int, deckType DeckType) *Game {
 	return NewGameWithType(numDecks, deckType, Blackjack, 6)
 }
 
+// NewGameWithType creates a fully customized game with all parameters specified.
+// This is the most flexible constructor supporting different games, decks, and player limits.
 func NewGameWithType(numDecks int, deckType DeckType, gameType GameType, maxPlayers int) *Game {
 	game := &Game{
 		ID:            uuid.New().String(),
@@ -744,10 +850,14 @@ func NewGameWithType(numDecks int, deckType DeckType, gameType GameType, maxPlay
 	return game
 }
 
+// UpdateLastUsed updates the game's last activity timestamp.
+// This is used for game cleanup and determining inactive games for garbage collection.
 func (g *Game) UpdateLastUsed() {
 	g.LastUsed = time.Now()
 }
 
+// AddPlayer creates and adds a new player to the game.
+// Returns nil if the game is at maximum capacity, otherwise returns the new player.
 func (g *Game) AddPlayer(name string) *Player {
 	if len(g.Players) >= g.MaxPlayers {
 		return nil
@@ -762,6 +872,8 @@ func (g *Game) AddPlayer(name string) *Player {
 	return player
 }
 
+// GetPlayer retrieves a player by ID, including the special "dealer" player.
+// Returns nil if the player is not found in the game.
 func (g *Game) GetPlayer(playerID string) *Player {
 	if playerID == "dealer" {
 		return g.Dealer
@@ -775,6 +887,8 @@ func (g *Game) GetPlayer(playerID string) *Player {
 	return nil
 }
 
+// RemovePlayer removes a player from the game by their ID.
+// Returns true if the player was found and removed, false otherwise.
 func (g *Game) RemovePlayer(playerID string) bool {
 	for i, player := range g.Players {
 		if player.ID == playerID {
@@ -785,6 +899,8 @@ func (g *Game) RemovePlayer(playerID string) bool {
 	return false
 }
 
+// DealToPlayer deals a single card from the deck to the specified player.
+// The card's face-up status can be controlled, used for initial deals and hits.
 func (g *Game) DealToPlayer(playerID string, faceUp bool) *Card {
 	player := g.GetPlayer(playerID)
 	if player == nil {
@@ -801,6 +917,8 @@ func (g *Game) DealToPlayer(playerID string, faceUp bool) *Card {
 	return card
 }
 
+// AddDiscardPile creates a new named discard pile for the game.
+// Returns nil if a pile with the same ID already exists.
 func (g *Game) AddDiscardPile(id, name string) *DiscardPile {
 	if _, exists := g.DiscardPiles[id]; exists {
 		return nil
@@ -815,10 +933,14 @@ func (g *Game) AddDiscardPile(id, name string) *DiscardPile {
 	return pile
 }
 
+// GetDiscardPile retrieves a discard pile by its ID.
+// Returns nil if the pile doesn't exist in the game.
 func (g *Game) GetDiscardPile(id string) *DiscardPile {
 	return g.DiscardPiles[id]
 }
 
+// StartBlackjackGame begins a blackjack game by dealing initial cards to all players.
+// Each player and dealer receives 2 cards, with dealer's second card face down.
 func (g *Game) StartBlackjackGame() error {
 	if len(g.Players) == 0 {
 		return fmt.Errorf("no players in game")
@@ -886,6 +1008,8 @@ func (g *Game) PlayerStand(playerID string) error {
 	return nil
 }
 
+// PlayDealer executes the dealer's turn according to standard blackjack rules.
+// Dealer hits on 16 and below, stands on 17 and above, then finishes the game.
 func (g *Game) PlayDealer() error {
 	// Reveal dealer's hole card
 	if len(g.Dealer.Hand) > 0 {
@@ -909,6 +1033,8 @@ func (g *Game) PlayDealer() error {
 	return nil
 }
 
+// GetGameResult calculates the final outcome for each player in a finished blackjack game.
+// Returns a map of player IDs to results: "blackjack", "win", "push", "bust", or "lose".
 func (g *Game) GetGameResult() map[string]string {
 	if g.Status != GameFinished {
 		return map[string]string{"status": "game not finished"}
@@ -940,7 +1066,8 @@ func (g *Game) GetGameResult() map[string]string {
 	return results
 }
 
-// Cribbage game methods
+// StartCribbageGame initializes a new cribbage game with 2 players.
+// Deals 6 cards to each player and sets up the cribbage game state.
 func (g *Game) StartCribbageGame() error {
 	if len(g.Players) != 2 {
 		return fmt.Errorf("cribbage requires exactly 2 players")
@@ -977,6 +1104,8 @@ func (g *Game) StartCribbageGame() error {
 	return nil
 }
 
+// CribbageDiscard handles players discarding 2 cards to the crib during the discard phase.
+// Once both players discard, it cuts the starter card and moves to the play phase.
 func (g *Game) CribbageDiscard(playerID string, cardIndices []int) error {
 	if g.CribbageState == nil || g.CribbageState.Phase != CribbageDiscard {
 		return fmt.Errorf("not in discard phase")
@@ -1321,11 +1450,15 @@ func (g *Game) resetPlayRound() {
 	}
 }
 
+// GameManager provides thread-safe management of multiple concurrent card games.
+// It uses read-write mutexes to allow concurrent read access while ensuring write safety.
 type GameManager struct {
 	games map[string]*Game
 	mutex sync.RWMutex
 }
 
+// NewGameManager creates a new game manager with an empty game collection.
+// This is used as a singleton to manage all active games in the application.
 func NewGameManager() *GameManager {
 	return &GameManager{
 		games: make(map[string]*Game),
@@ -1371,6 +1504,8 @@ func (gm *GameManager) DeleteGame(gameID string) bool {
 	return exists
 }
 
+// ListGames returns a slice of all active game IDs.
+// This method is thread-safe and provides a snapshot of current games.
 func (gm *GameManager) ListGames() []string {
 	gm.mutex.RLock()
 	defer gm.mutex.RUnlock()
@@ -1382,6 +1517,8 @@ func (gm *GameManager) ListGames() []string {
 	return gameIDs
 }
 
+// CleanupOldGames removes games that haven't been used within the specified duration.
+// Returns the number of games deleted, used for memory management and cleanup.
 func (gm *GameManager) CleanupOldGames(maxAge time.Duration) int {
 	gm.mutex.Lock()
 	defer gm.mutex.Unlock()
@@ -1399,12 +1536,16 @@ func (gm *GameManager) CleanupOldGames(maxAge time.Duration) int {
 	return deleted
 }
 
+// GameCount returns the current number of active games.
+// This method is thread-safe and used for monitoring and metrics.
 func (gm *GameManager) GameCount() int {
 	gm.mutex.RLock()
 	defer gm.mutex.RUnlock()
 	return len(gm.games)
 }
 
+// CustomCard represents a user-defined card with flexible attributes and optional game compatibility.
+// Cards can have string or numeric ranks, custom attributes, and tombstone deletion for data integrity.
 type CustomCard struct {
 	Index          int                    `json:"index"`
 	Name           string                 `json:"name"`
@@ -1415,6 +1556,8 @@ type CustomCard struct {
 	Deleted        bool                   `json:"deleted"`
 }
 
+// UpdateGameCompatibility determines if the card can be used in traditional card games.
+// Cards with numeric ranks and suits are compatible, while string ranks are not.
 func (cc *CustomCard) UpdateGameCompatibility() {
 	if cc.Rank == nil || cc.Suit == "" {
 		cc.GameCompatible = false
@@ -1431,6 +1574,8 @@ func (cc *CustomCard) UpdateGameCompatibility() {
 	}
 }
 
+// GetNumericRank extracts the numeric value from the card's rank if possible.
+// Returns the rank as an integer and whether the conversion was successful.
 func (cc *CustomCard) GetNumericRank() (int, bool) {
 	if cc.Rank == nil {
 		return 0, false
@@ -1452,6 +1597,8 @@ func (cc *CustomCard) GetNumericRank() (int, bool) {
 	}
 }
 
+// CustomDeck represents a collection of user-defined custom cards with metadata.
+// It tracks card indices for consistent referencing and usage timestamps for cleanup.
 type CustomDeck struct {
 	ID          string        `json:"id"`
 	Name        string        `json:"name"`
@@ -1461,6 +1608,8 @@ type CustomDeck struct {
 	LastUsed    time.Time     `json:"last_used"`
 }
 
+// NewCustomDeckTemplate creates a new empty custom deck with the given name.
+// Initializes all required fields including UUID and timestamps for proper tracking.
 func NewCustomDeckTemplate(name string) *CustomDeck {
 	return &CustomDeck{
 		ID:        uuid.New().String(),

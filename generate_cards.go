@@ -42,6 +42,8 @@ var (
 	darkBlue = color.RGBA{0, 0, 139, 255}
 )
 
+// CardInfo contains all the information needed to generate a playing card image.
+// It includes display values, colors, and file naming for consistent card generation.
 type CardInfo struct {
 	Rank     string
 	RankVal  int
@@ -51,6 +53,8 @@ type CardInfo struct {
 	FileName string
 }
 
+// getFontFace creates a font face from TTF bytes at the specified size.
+// This is used to render text on card images with consistent typography.
 func getFontFace(ttf []byte, size float64) font.Face {
 	f, err := opentype.Parse(ttf)
 	if err != nil {
@@ -68,6 +72,8 @@ func getFontFace(ttf []byte, size float64) font.Face {
 	return face
 }
 
+// main generates all 52 playing card images in three sizes plus card backs.
+// Creates directory structure and outputs 156 total PNG files for the card game API.
 func main() {
 	suits := []struct {
 		name   string
@@ -133,6 +139,8 @@ func main() {
 	fmt.Printf("Generated %d cards in 3 sizes (should be 52)\n", cardCount)
 }
 
+// generateCard creates a single playing card image with the specified dimensions.
+// Renders rank, suit symbols, and border according to traditional playing card layout.
 func generateCard(card CardInfo, width, height int, size string) {
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
 	
@@ -193,6 +201,8 @@ func generateCard(card CardInfo, width, height int, size string) {
 	}
 }
 
+// generateCardBack creates a card back image with decorative pattern.
+// Used for face-down cards to hide their identity during gameplay.
 func generateCardBack(width, height int, size string) {
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
 	
@@ -219,6 +229,8 @@ func generateCardBack(width, height int, size string) {
 	}
 }
 
+// drawBorder draws a rectangular border around the card image.
+// Creates the distinctive outline that defines the card's boundaries.
 func drawBorder(img *image.RGBA, c color.RGBA, thickness int) {
 	bounds := img.Bounds()
 	for i := 0; i < thickness; i++ {
@@ -235,6 +247,8 @@ func drawBorder(img *image.RGBA, c color.RGBA, thickness int) {
 	}
 }
 
+// drawTextWithFont renders text at the specified position using the given font face.
+// Used for drawing rank labels and other text elements on cards.
 func drawTextWithFont(img *image.RGBA, text string, x, y int, c color.RGBA, face font.Face) {
 	point := fixed.Point26_6{X: fixed.Int26_6(x * 64), Y: fixed.Int26_6(y * 64)}
 	d := &font.Drawer{
@@ -246,11 +260,15 @@ func drawTextWithFont(img *image.RGBA, text string, x, y int, c color.RGBA, face
 	d.DrawString(text)
 }
 
+// getTextWidth calculates the pixel width of text with the given font face.
+// Used for centering text and proper layout positioning on cards.
 func getTextWidth(text string, face font.Face) int {
 	d := &font.Drawer{Face: face}
 	return d.MeasureString(text).Round()
 }
 
+// drawCenterSymbols renders the appropriate number of suit symbols on the card.
+// Implements traditional playing card layouts with proper symbol positioning.
 func drawCenterSymbols(img *image.RGBA, card CardInfo, size string) {
 	bounds := img.Bounds()
 	
@@ -298,6 +316,8 @@ func drawCenterSymbols(img *image.RGBA, card CardInfo, size string) {
 	}
 }
 
+// getSuitPositions calculates where to place suit symbols based on the card's rank.
+// Returns coordinates for traditional playing card symbol arrangements (1-10 symbols).
 func getSuitPositions(rank int, bounds image.Rectangle, size string) []image.Point {
 	width := bounds.Max.X
 	height := bounds.Max.Y
@@ -446,6 +466,8 @@ func getSuitPositions(rank int, bounds image.Rectangle, size string) []image.Poi
 	}
 }
 
+// drawBackPattern draws a decorative pattern on the card back.
+// Creates visual texture while maintaining symmetry for card back design.
 func drawBackPattern(img *image.RGBA, size string) {
 	bounds := img.Bounds()
 	width := bounds.Max.X

@@ -1,0 +1,129 @@
+version: '3.8'
+
+# Security-enhanced Docker Compose configuration
+services:
+  cardgame-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    image: cardgame-api:latest
+    container_name: cardgame-api-secure
+    
+    # Network mode for isolation
+    networks:
+      - cardgame-secure-net
+    
+    # Port mapping with specific interface binding
+    ports:
+      - "127.0.0.1:8080:8080"
+    
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+      - apparmor:docker-default
+      - seccomp:unconfined
+    
+    # Read-only root filesystem
+    read_only: true
+    
+    # Temporary filesystems for writable areas
+    tmpfs:
+      - /tmp:noexec,nosuid,size=10M
+    
+    # Capabilities - drop all and add only required
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    
+    # Environment variables
+    environment:
+      - PORT=8080
+      - GIN_MODE=release
+      - LOG_LEVEL=INFO
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+          pids: 100
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/hello"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Logging configuration
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=cardgame-api"
+        env: "LOG_LEVEL,GIN_MODE"
+    
+    # User namespace remapping (requires Docker daemon configuration)
+    userns_mode: "host"
+
+  # Security scanning service
+  trivy:
+    image: aquasec/trivy:latest
+    container_name: cardgame-security-scan
+    command: image --exit-code 0 --no-progress cardgame-api:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - trivy-cache:/root/.cache
+    networks:
+      - cardgame-secure-net
+    profiles:
+      - security
+    depends_on:
+      - cardgame-api
+
+  # Optional: Falco for runtime security monitoring
+  falco:
+    image: falcosecurity/falco:latest
+    container_name: cardgame-falco
+    privileged: true
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+      - /boot:/host/boot:ro
+      - /lib/modules:/host/lib/modules:ro
+      - /usr:/host/usr:ro
+      - /etc:/host/etc:ro
+      - ./falco_rules.yaml:/etc/falco/rules.d/cardgame_rules.yaml:ro
+    environment:
+      - HOST_ROOT=/host
+    networks:
+      - cardgame-secure-net
+    profiles:
+      - runtime-security
+
+networks:
+  cardgame-secure-net:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: br-cardgame
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+          ip_range: 172.20.240.0/20
+          gateway: 172.20.0.1
+
+volumes:
+  trivy-cache:

@@ -20,18 +20,36 @@ A comprehensive Go/Gin API for card games with full blackjack support, player ha
 
 ## Quick Start
 
-### 1. Start the Server
+### Option 1: Using Go
 ```bash
 go run .
 ```
 Server runs on `http://localhost:8080`
 
-### 2. Test Basic Endpoint
+### Option 2: Using Docker
+```bash
+# Build and run with Docker
+docker build -t cardgame-api .
+docker run -p 8080:8080 cardgame-api
+
+# Or use Docker Compose
+docker-compose up
+```
+
+### Option 3: Using Pre-built Image
+```bash
+docker run -p 8080:8080 \
+  -e LOG_LEVEL=INFO \
+  -e GIN_MODE=release \
+  cardgame-api:latest
+```
+
+### Test Basic Endpoint
 ```bash
 curl http://localhost:8080/hello
 ```
 
-### 3. View API Documentation
+### View API Documentation
 - **Interactive API Documentation**: http://localhost:8080/api-docs
 - **OpenAPI Specification**: http://localhost:8080/openapi.yaml
 
@@ -1016,6 +1034,525 @@ The game continues with new deals until one player reaches 121 points:
   "winner_id": "player-uuid-alice"
 }
 ```
+
+## Observability and Debugging
+
+The Card Game API includes comprehensive observability features to monitor application performance and troubleshoot issues in production.
+
+### Logging
+
+The application uses structured JSON logging with configurable log levels:
+
+#### Environment Variables
+- `LOG_LEVEL`: Set logging level (DEBUG, INFO, WARN, ERROR) - defaults to INFO
+- `TRUSTED_PROXIES`: Comma-separated list of trusted proxy IPs for correct client IP extraction
+
+#### Log Levels and Usage
+- **DEBUG**: Detailed operations (card dealing, game state changes, validation steps)
+- **INFO**: Normal operations (requests, game creation, successful operations)
+- **WARN**: Validation failures, invalid requests, recoverable errors
+- **ERROR**: System errors, failed operations, server failures
+
+#### Example Log Output
+```json
+{
+  "level": "info",
+  "time": "2025-07-29T18:18:51-07:00",
+  "caller": "cardgame-api/main.go:242",
+  "message": "Request completed",
+  "method": "GET",
+  "path": "/game/abc123/deal",
+  "query": "",
+  "user_agent": "curl/8.7.1",
+  "client_ip": "192.168.1.100",
+  "game_id": "abc123",
+  "status_code": 200,
+  "latency": 0.000101375,
+  "latency_human": "101.375µs"
+}
+```
+
+### Metrics
+
+OpenTelemetry metrics are collected for monitoring application performance:
+
+#### Available Metrics
+- `http_requests_total`: Counter of total HTTP requests by method, path, status code
+- `http_request_duration_seconds`: Histogram of request latency in seconds
+- `http_requests_in_flight`: Current number of HTTP requests being processed
+- `active_games`: Current number of active games
+- `active_custom_decks`: Current number of custom decks
+- `cards_dealt_total`: Counter of total cards dealt
+- `games_created_total`: Counter of total games created
+- `api_errors_total`: Counter of API errors (5xx status codes)
+
+#### Metrics Endpoints
+- **Prometheus Format**: `GET /metrics` - Standard Prometheus metrics format
+- **JSON Stats**: `GET /stats` - Human-readable JSON metrics summary
+
+#### Example Stats Response
+```json
+{
+  "service": {
+    "name": "cardgame-api",
+    "version": "1.0.0",
+    "uptime": "2h34m15s"
+  },
+  "games": {
+    "active_count": 15,
+    "total_created": 247
+  },
+  "metrics": {
+    "http_requests_total": 1523,
+    "cards_dealt_total": 8934,
+    "api_errors_total": 12
+  },
+  "system": {
+    "timestamp": "2025-07-29T20:52:15Z",
+    "log_level": "info"
+  }
+}
+```
+
+### Debugging Common Issues
+
+#### Game Not Found Errors
+1. Check logs for game creation: `game_id` field in request logs
+2. Verify game exists: `curl http://localhost:8080/games`
+3. Check if game was deleted: Look for DELETE operations in logs
+
+#### Card Dealing Issues
+- **No cards remaining**: Check `remaining_cards` in game state
+- **Invalid game state**: Verify game status is not "finished"
+- **Player not found**: Confirm player was added to game
+
+#### Performance Issues
+1. Monitor `/metrics` endpoint for high latency
+2. Check `http_requests_in_flight` for request queuing
+3. Review `http_request_duration_seconds` histogram
+
+#### Log Analysis
+```bash
+# Filter by game ID
+cat app.log | jq 'select(.game_id == "your-game-id")'
+
+# Monitor error rates
+cat app.log | jq 'select(.level == "error")'
+
+# Track API performance
+cat app.log | jq 'select(.latency != null) | {path, latency_human, status_code}'
+
+# Watch live logs
+tail -f app.log | jq 'select(.level == "error" or .status_code >= 400)'
+```
+
+#### Environment Configuration for Production
+```bash
+# Set log level to reduce verbosity
+export LOG_LEVEL=INFO
+
+# Configure trusted proxies for load balancers
+export TRUSTED_PROXIES="10.0.1.100,192.168.1.0/24"
+
+# Set Gin to release mode
+export GIN_MODE=release
+```
+
+#### Monitoring Recommendations
+1. Set up alerts on `api_errors_total` metric spikes
+2. Monitor `http_request_duration_seconds` 95th percentile
+3. Track `active_games` growth over time
+4. Alert on sustained high `http_requests_in_flight`
+
+### Common Log Patterns for Debugging
+
+#### Successful Game Flow
+```
+INFO Request started: POST /game/new
+DEBUG Creating new game: decks=1, type=standard
+INFO Game created successfully: game_id=abc123
+INFO Request completed: status_code=200
+```
+
+#### Card Dealing Sequence
+```
+INFO Request started: GET /game/abc123/deal
+DEBUG Dealing card: game_id=abc123, remaining_cards=51
+INFO Card dealt successfully: card="Ace of Hearts", remaining_cards=50
+INFO Request completed: status_code=200
+```
+
+#### Error Scenarios
+```
+WARN Invalid game ID provided: game_id=invalid-id
+WARN Game not found: game_id=nonexistent-game
+ERROR Request failed: status_code=404
+```
+
+## Container Deployment
+
+The Card Game API is fully containerized with Docker support for easy deployment and scaling.
+
+### Docker Images
+
+The application uses a multi-stage build process to create minimal, secure container images:
+- **Build stage**: Uses Go 1.24.4 Alpine for compilation
+- **Runtime stage**: Uses Alpine Linux with non-root user for security
+- **Final image size**: ~15MB (excluding static assets)
+
+### Building the Container
+
+```bash
+# Build the Docker image
+docker build -t cardgame-api:latest .
+
+# Build with custom tags
+docker build -t cardgame-api:v1.0.0 -t cardgame-api:latest .
+```
+
+### Running with Docker
+
+```bash
+# Basic run
+docker run -p 8080:8080 cardgame-api:latest
+
+# Run with custom configuration
+docker run -d \
+  --name cardgame-api \
+  -p 8080:8080 \
+  -e LOG_LEVEL=DEBUG \
+  -e PORT=8080 \
+  -e GIN_MODE=release \
+  -e TRUSTED_PROXIES="10.0.0.0/8" \
+  --restart unless-stopped \
+  cardgame-api:latest
+
+# View logs
+docker logs -f cardgame-api
+
+# Check health
+docker inspect cardgame-api --format='{{.State.Health.Status}}'
+```
+
+### Docker Compose
+
+The included `docker-compose.yml` provides a complete development environment:
+
+```bash
+# Start the application
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop the application
+docker-compose down
+
+# Start with monitoring stack (Prometheus + Grafana)
+docker-compose --profile monitoring up -d
+```
+
+### Environment Variables
+
+Configure the container using these environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PORT` | Server port | `8080` |
+| `LOG_LEVEL` | Logging level (DEBUG, INFO, WARN, ERROR) | `INFO` |
+| `GIN_MODE` | Gin framework mode (debug, release) | `release` |
+| `TRUSTED_PROXIES` | Comma-separated trusted proxy IPs | `""` |
+
+### Health Checks
+
+The container includes built-in health checks:
+- **Endpoint**: `/hello`
+- **Interval**: 30 seconds
+- **Timeout**: 3 seconds
+- **Retries**: 3
+
+### Container Best Practices
+
+1. **Security**:
+   - Runs as non-root user (UID 1000)
+   - Minimal Alpine base image
+   - No unnecessary packages
+
+2. **Resource Limits** (via docker-compose):
+   - CPU: 1 core limit, 0.5 core reservation
+   - Memory: 512MB limit, 256MB reservation
+
+3. **Logging**:
+   - JSON structured logs to stdout/stderr
+   - Log rotation configured in docker-compose
+   - Compatible with log aggregation systems
+
+4. **Monitoring**:
+   - Prometheus metrics at `/metrics`
+   - Optional Prometheus/Grafana stack
+   - Built-in health endpoint
+
+### Kubernetes Deployment
+
+Example Kubernetes deployment:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cardgame-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: cardgame-api
+  template:
+    metadata:
+      labels:
+        app: cardgame-api
+    spec:
+      containers:
+      - name: cardgame-api
+        image: cardgame-api:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: GIN_MODE
+          value: "release"
+        livenessProbe:
+          httpGet:
+            path: /hello
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /hello
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          limits:
+            cpu: "1"
+            memory: "512Mi"
+          requests:
+            cpu: "500m"
+            memory: "256Mi"
+```
+
+### Production Considerations
+
+1. **Reverse Proxy**: Use nginx/traefik for SSL termination
+2. **Secrets**: Use Docker secrets or Kubernetes secrets for sensitive data
+3. **Persistence**: Games are in-memory; add Redis for persistence if needed
+4. **Scaling**: Stateless design allows horizontal scaling
+5. **Monitoring**: Connect to your existing Prometheus/Grafana stack
+
+## Container Security
+
+The Card Game API implements comprehensive security measures for containerized deployments.
+
+### Security Features
+
+#### 1. Secure Docker Image
+- **Multi-stage build**: Minimal attack surface
+- **Non-root user**: Runs as UID 65532
+- **No shell**: Reduced exploitation risk
+- **Read-only filesystem**: Prevents runtime modifications
+- **Security labels**: Enables automated scanning
+
+#### 2. Security Scanning
+Run comprehensive security scans:
+```bash
+# Run all security scans
+make security-scan
+
+# Build with security validation
+make docker-build-secure
+
+# Run with enhanced security
+make compose-security
+```
+
+#### 3. Secrets Management
+Generate and manage secrets securely:
+```bash
+# Generate secure secrets
+./scripts/generate-secrets.sh
+
+# Run with secrets
+docker-compose -f docker-compose.secrets.yml up
+```
+
+#### 4. Security Configurations
+
+**docker-compose.security.yml** includes:
+- Read-only root filesystem
+- Dropped Linux capabilities
+- No new privileges flag
+- Seccomp and AppArmor profiles
+- Resource limits (CPU, memory, PIDs)
+- Network isolation
+- Localhost-only port binding
+
+### Security Best Practices
+
+#### Image Security
+1. **Regular Updates**: Rebuild images weekly for security patches
+2. **Vulnerability Scanning**: Use Trivy/Clair before deployment
+3. **SBOM Generation**: Track all dependencies
+4. **Minimal Base**: Alpine Linux with only essential packages
+
+#### Runtime Security
+1. **Network Policies**: Restrict egress/ingress traffic
+2. **Resource Limits**: Prevent DoS attacks
+3. **Health Checks**: Ensure service availability
+4. **Audit Logging**: Track all API access
+
+#### Secrets Management
+1. **Never hardcode**: Use environment variables or files
+2. **Rotate regularly**: Implement key rotation
+3. **Encrypt at rest**: Use Docker secrets or Kubernetes secrets
+4. **Minimal exposure**: Mount secrets as read-only files
+
+### Security Checklist
+
+Before deploying to production:
+
+- [ ] Run `make security-scan` and fix all HIGH/CRITICAL issues
+- [ ] Generate new secrets with `./scripts/generate-secrets.sh`
+- [ ] Review Dockerfile with `hadolint Dockerfile`
+- [ ] Enable read-only root filesystem
+- [ ] Configure resource limits
+- [ ] Set up network policies
+- [ ] Enable audit logging
+- [ ] Configure HTTPS/TLS
+- [ ] Set up WAF rules
+- [ ] Implement rate limiting
+
+### Kubernetes Security
+
+Example secure Kubernetes deployment:
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cardgame-api
+  namespace: cardgame
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cardgame-api
+  namespace: cardgame
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: cardgame-api
+  template:
+    metadata:
+      labels:
+        app: cardgame-api
+    spec:
+      serviceAccountName: cardgame-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: cardgame-api
+        image: cardgame-api:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65532
+          capabilities:
+            drop:
+            - ALL
+        env:
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: GIN_MODE
+          value: "release"
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: cardgame-secrets
+              key: api-key
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        livenessProbe:
+          httpGet:
+            path: /hello
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /hello
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          limits:
+            cpu: "1"
+            memory: "512Mi"
+          requests:
+            cpu: "500m"
+            memory: "256Mi"
+      volumes:
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cardgame-api-netpol
+  namespace: cardgame
+spec:
+  podSelector:
+    matchLabels:
+      app: cardgame-api
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 53  # DNS
+    - protocol: UDP
+      port: 53  # DNS
+```
+
+### Compliance
+
+The security implementation helps meet common compliance requirements:
+- **PCI DSS**: Secure configuration, access controls, monitoring
+- **HIPAA**: Encryption, audit logs, access management
+- **SOC 2**: Security controls, monitoring, incident response
+- **GDPR**: Data protection, audit trails, secure processing
 
 ## License
 
