@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
@@ -65,6 +66,16 @@ func main() {
 	// Add custom middleware
 	r.Use(middleware.LogMiddleware(logger, metricsRegistry))
 	r.Use(gin.Recovery())
+	
+	// Configure CORS middleware
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"http://localhost:3001"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
 	
 	// Configure trusted proxies for security
 	trustedProxies := config.GetTrustedProxies()
