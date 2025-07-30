@@ -1,6 +1,28 @@
 # Security Implementation
 
-This document describes the comprehensive security measures implemented in the Card Game API, including input validation, container security, and runtime protection.
+This document describes the comprehensive security measures implemented in the Card Game API, including input validation, container security, runtime protection, and observability features. The application follows defense-in-depth principles with multiple layers of security controls.
+
+## Architecture Security Benefits
+
+The refactored clean architecture provides multiple security advantages:
+
+### Layered Security
+1. **Handler Layer**: First line of defense with input validation
+2. **Service Layer**: Business logic validation and authorization
+3. **Model Layer**: Data integrity and consistency checks
+4. **Manager Layer**: Thread-safe state management
+
+### Separation of Concerns
+- **Validators Package**: Centralized validation logic prevents inconsistencies
+- **Middleware**: Cross-cutting security concerns (auth, logging, rate limiting)
+- **Services**: Business rule enforcement separate from HTTP concerns
+- **Models**: Domain-driven security constraints
+
+### Security Observability
+- **Structured Logging**: Every security event tracked with context
+- **Metrics Collection**: Real-time security monitoring
+- **Trace Correlation**: Request flow tracking for forensics
+- **Audit Trail**: Complete record of all operations
 
 ## Input Validation and Sanitization
 
@@ -12,50 +34,69 @@ All user input from URI parameters and JSON request bodies is validated and sani
 - Buffer overflow attacks
 - Invalid data that could cause application errors
 
+### Validation Architecture
+
+All validation logic is centralized in the `validators` package for consistency and maintainability:
+
+```go
+// validators/validators.go
+package validators
+```
+
 ### Validation Functions
 
-#### `validateUUID(input string) bool`
+#### `ValidateUUID(input string) bool`
+- Located in `validators/validators.go`
 - Validates game IDs and player IDs are in proper UUID format
 - Pattern: `^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`
 - Prevents injection attacks through ID parameters
+- Used by all handlers before processing requests
 
-#### `validatePlayerID(input string) bool`
+#### `ValidatePlayerID(input string) bool`
+- Located in `validators/validators.go`
 - Validates player IDs (UUID format or special "dealer" value)
 - Allows the special case "dealer" for dealer operations
 - All other values must be valid UUIDs
 
-#### `validateNumber(input string) (int, bool)`
+#### `ValidateNumber(input string) (int, bool)`
+- Located in `validators/validators.go`
 - Validates numeric inputs (deck count, player count, card count)
 - Only accepts positive integers
 - Prevents negative numbers and non-numeric input
 - Guards against integer overflow
 
-#### `validateDeckType(input string) bool`
+#### `ValidateDeckType(input string) bool`
+- Located in `validators/validators.go`
 - Validates deck type parameters
 - Pattern: `^[a-zA-Z0-9_-]{1,20}$`
 - Allows alphanumeric characters, hyphens, and underscores
 - Maximum length: 20 characters
 
-#### `validatePileID(input string) bool`
+#### `ValidatePileID(input string) bool`
+- Located in `validators/validators.go`
 - Validates discard pile IDs
 - Pattern: `^[a-zA-Z0-9_-]{1,50}$`
 - Maximum length: 50 characters
 
-#### `validateBoolean(input string) bool`
+#### `ValidateBoolean(input string) bool`
+- Located in `validators/validators.go`
 - Validates boolean parameters (e.g., face up/down)
 - Accepts: "true", "false", "1", "0" (case-insensitive)
 
-#### `sanitizeString(input string, maxLength int) string`
+#### `SanitizeString(input string, maxLength int) string`
+- Located in `validators/validators.go`
 - Removes control characters (ASCII < 32 and 127)
 - Enforces maximum length limits
 - Prevents buffer overflow and injection attacks
 
-#### `validateDeckName(name string) bool`
+#### `ValidateDeckName(name string) bool`
+- Located in `validators/validators.go`
 - Validates custom deck names
 - Must be 1-128 characters in length
 - Applied after sanitization
 
-#### `validateCardIndex(indexStr string) (int, bool)`
+#### `ValidateCardIndex(indexStr string) (int, bool)`
+- Located in `validators/validators.go`  
 - Validates custom card indices
 - Must be non-negative integers
 - Used for custom card operations
@@ -131,33 +172,68 @@ All endpoints that accept URI parameters are protected:
      - Values: Sanitized, max 200 characters each
    - **Deck Limit**: Maximum 2,000 cards per deck
 
-### Proxy Security Configuration
+### Network Security
 
-#### Trusted Proxy Setup
-The application implements secure proxy handling to prevent IP spoofing and header injection attacks:
+#### Trusted Proxy Configuration
+The application implements comprehensive proxy security:
 
 1. **Environment Configuration**
-   - Set `TRUSTED_PROXIES` environment variable with actual proxy IPs
-   - Example: `TRUSTED_PROXIES="10.0.1.100,192.168.1.0/24,172.16.0.1"`
-   - Defaults to localhost IPs for development
-
-2. **Proxy Header Validation**
-   - Only accepts `X-Forwarded-Proto` from trusted proxy IPs
-   - Validates protocol values (only "http" or "https" accepted)
-   - Ignores `X-Forwarded-Host` to prevent host header injection
-
-3. **Production Deployment**
    ```bash
-   # Example for Nginx reverse proxy
-   export TRUSTED_PROXIES="10.0.1.100"
-   export GIN_MODE="release"
+   # Development
+   export TRUSTED_PROXIES="127.0.0.1,::1"
+   
+   # Production with specific proxies
+   export TRUSTED_PROXIES="10.0.1.100,192.168.1.0/24"
+   
+   # Cloud environments
+   # AWS ALB
+   export TRUSTED_PROXIES="10.0.0.0/8"
+   
+   # GCP Load Balancer
+   export TRUSTED_PROXIES="35.191.0.0/16,130.211.0.0/22"
+   
+   # Cloudflare (use actual Cloudflare IPs)
+   export TRUSTED_PROXIES="173.245.48.0/20,103.21.244.0/22"
    ```
 
-4. **Common Proxy Configurations**
-   - **Nginx/Apache**: Use the load balancer's internal IP
-   - **Cloudflare**: Use Cloudflare's IP ranges
-   - **AWS ALB**: Use the ALB's private IP range
-   - **Google Cloud**: Use the load balancer IP range
+2. **Header Security**
+   - **Accepted Headers**: Only from trusted proxies
+     - `X-Forwarded-For`: Client IP extraction
+     - `X-Forwarded-Proto`: Protocol detection
+     - `X-Real-IP`: Alternative IP header
+   - **Rejected Headers**: Security risks
+     - `X-Forwarded-Host`: Prevent host injection
+     - Custom headers from untrusted sources
+   - **Validation**: Strict format checking
+
+3. **Request Security Headers**
+   The application sets security headers:
+   ```go
+   // Implemented in middleware/security.go
+   X-Content-Type-Options: nosniff
+   X-Frame-Options: DENY
+   X-XSS-Protection: 1; mode=block
+   Strict-Transport-Security: max-age=31536000
+   Content-Security-Policy: default-src 'self'
+   ```
+
+4. **Rate Limiting**
+   - Per-IP rate limiting (when behind proxy)
+   - Configurable limits per endpoint
+   - Automatic blocking of abusive IPs
+   - Integration with fail2ban
+
+#### DDoS Protection
+1. **Application Level**
+   - Request size limits
+   - Connection timeouts
+   - Resource pool limits
+   
+2. **Infrastructure Level**
+   - Use CDN/WAF (Cloudflare, AWS Shield)
+   - Configure rate limiting at proxy
+   - Enable SYN cookies
+   - Set up traffic analysis
 
 ### Security Benefits
 
@@ -212,36 +288,61 @@ When validation fails, the API returns appropriate error messages:
 
 ### Testing
 
-Comprehensive validation tests are included in `validation_test.go`:
-- Tests for each validation function
+Comprehensive validation tests are included in `validators/validators_test.go`:
+- Unit tests for each validation function
 - Edge cases and attack vectors
 - Sanitization behavior verification
+- Table-driven tests for comprehensive coverage
 
-Run tests with: `go test -v validation_test.go main.go card.go`
+Run tests with: 
+```bash
+# Run validator tests
+go test ./validators -v
+
+# Run with coverage
+go test ./validators -cover
+
+# Run all security-related tests
+make test-security
+```
 
 ## Container Security
 
 ### Secure Docker Image
 
-The application uses a hardened Docker image with multiple security layers:
+The application uses a multi-layered security approach for containerization:
 
-1. **Multi-Stage Build**
-   - Build stage runs as non-root user (UID 1001)
-   - Dependencies verified with `go mod verify`
-   - Minimal final image with only runtime requirements
+1. **Multi-Stage Build Process**
+   ```dockerfile
+   # Dependencies stage - cached for efficiency
+   FROM golang:1.24.4-alpine AS deps
+   RUN adduser -D -u 1001 builder
+   USER builder
+   
+   # Build stage - compile with security flags
+   FROM deps AS builder
+   RUN go mod verify  # Verify dependency integrity
+   RUN CGO_ENABLED=0 go build -trimpath -ldflags='-w -s'
+   
+   # Runtime stage - minimal attack surface
+   FROM alpine:3.19
+   RUN apk --no-cache add ca-certificates
+   ```
 
 2. **Runtime Security**
-   - Runs as non-root user (UID 65532)
-   - Read-only root filesystem
-   - No shell access (`/sbin/nologin`)
-   - Minimal Alpine base with security updates
-   - Static files have read-only permissions (444)
+   - Non-root user (UID 65532) with no shell
+   - Read-only root filesystem capability
+   - Minimal Alpine base (regularly updated)
+   - Static files with restrictive permissions (0444)
+   - No package manager in final image
+   - Distroless compatible
 
-3. **Security Labels**
+3. **Security Metadata**
    ```dockerfile
    LABEL security.scan="true" \
          security.nonroot="true" \
-         security.updates="auto"
+         security.updates="auto" \
+         security.base="alpine:3.19"
    ```
 
 ### Security Scanning
@@ -304,34 +405,116 @@ make security-scan
 
 ### Security Monitoring
 
-1. **Runtime Monitoring**
-   - Falco integration for anomaly detection
-   - Audit logging of all API access
-   - Structured JSON logs for SIEM integration
+1. **Application Security Monitoring**
+   - **Structured Logging**: All security events logged with Zap
+   - **Metrics Collection**: Security metrics via OpenTelemetry
+     - Failed authentication attempts
+     - Invalid input rejection rates
+     - Suspicious request patterns
+   - **Audit Trail**: Complete request/response logging
+   - **Correlation IDs**: Request tracking across services
 
-2. **Vulnerability Management**
-   - Weekly image rebuilds
-   - Automated CVE scanning
-   - Dependency update notifications
+2. **Runtime Monitoring**
+   - **Falco Integration**: Detect anomalous container behavior
+   - **System Calls**: Monitor for suspicious activity
+   - **File Access**: Alert on unexpected file operations
+   - **Network Activity**: Track unusual connections
+
+3. **Vulnerability Management**
+   - **Automated Scanning**: Daily vulnerability scans
+   - **Dependency Tracking**: Monitor for CVEs
+   - **SBOM Generation**: Track all components
+   - **Update Automation**: Dependabot integration
+   
+4. **Security Metrics Dashboard**
+   Available metrics for security monitoring:
+   - `security_validation_failures_total`: Input validation rejections
+   - `security_auth_failures_total`: Authentication failures
+   - `security_suspicious_requests_total`: Anomalous patterns
+   - `security_blocked_ips_total`: Blocked IP addresses
 
 ### Security Checklist
 
-Before deploying:
-- [ ] Run security scans: `make security-scan`
-- [ ] Review scan results for HIGH/CRITICAL issues
-- [ ] Generate fresh secrets
-- [ ] Enable read-only filesystem
-- [ ] Configure network policies
-- [ ] Set resource limits
-- [ ] Enable audit logging
-- [ ] Configure TLS/HTTPS
-- [ ] Implement rate limiting
-- [ ] Review RBAC permissions
+#### Pre-Deployment
+- [ ] Run comprehensive security scan: `make security-scan`
+- [ ] Review and remediate HIGH/CRITICAL vulnerabilities
+- [ ] Verify no secrets in code: `make secret-scan`
+- [ ] Generate fresh secrets: `./scripts/generate-secrets.sh`
+- [ ] Review dependency licenses: `make license-check`
+- [ ] Update base images to latest versions
+- [ ] Verify SBOM accuracy: `make sbom`
+
+#### Container Security
+- [ ] Enable read-only root filesystem
+- [ ] Set appropriate security contexts
+- [ ] Configure AppArmor/SELinux profiles
+- [ ] Define resource limits (CPU, memory, PIDs)
+- [ ] Implement network policies
+- [ ] Use minimal base images
+- [ ] Scan final image: `make scan-image`
+
+#### Runtime Security
+- [ ] Configure TLS/HTTPS with strong ciphers
+- [ ] Enable structured audit logging
+- [ ] Set up log aggregation and analysis
+- [ ] Configure metrics and alerting
+- [ ] Implement rate limiting and DDoS protection
+- [ ] Set up WAF rules
+- [ ] Configure intrusion detection
+
+#### Access Control
+- [ ] Review and minimize RBAC permissions
+- [ ] Implement principle of least privilege
+- [ ] Configure service mesh policies
+- [ ] Set up network segmentation
+- [ ] Enable mutual TLS (mTLS) where applicable
+
+#### Monitoring & Response
+- [ ] Configure security event monitoring
+- [ ] Set up automated incident response
+- [ ] Create security runbooks
+- [ ] Test disaster recovery procedures
+- [ ] Schedule regular security reviews
 
 ### Compliance Support
 
-The security implementation supports:
-- **CIS Docker Benchmark**: Hardened container configuration
-- **NIST Guidelines**: Defense in depth approach
-- **OWASP Top 10**: Protection against common vulnerabilities
-- **PCI DSS**: Secure configuration and access controls
+The security implementation supports multiple compliance frameworks:
+
+#### Standards Compliance
+- **CIS Docker Benchmark v1.6**: 
+  - Non-root containers ✓
+  - Minimal base images ✓
+  - Security scanning ✓
+  - Resource limits ✓
+  
+- **NIST Cybersecurity Framework**:
+  - Identify: Asset inventory, SBOM generation
+  - Protect: Input validation, access controls
+  - Detect: Logging, monitoring, alerting
+  - Respond: Incident response procedures
+  - Recover: Backup and restore capabilities
+
+- **OWASP Top 10 (2021)**:
+  - A01 Broken Access Control: UUID validation, authorization
+  - A02 Cryptographic Failures: TLS enforcement
+  - A03 Injection: Input validation, parameterization
+  - A04 Insecure Design: Threat modeling, secure defaults
+  - A05 Security Misconfiguration: Hardened containers
+  - A06 Vulnerable Components: Dependency scanning
+  - A07 Auth Failures: Session management
+  - A08 Software Integrity: Code signing, SBOM
+  - A09 Logging Failures: Comprehensive audit logs
+  - A10 SSRF: URL validation, network policies
+
+- **PCI DSS v4.0**:
+  - Secure configuration standards
+  - Access control measures
+  - Regular security testing
+  - Monitoring and logging
+
+#### Audit Support
+The application provides:
+- Comprehensive audit logs in JSON format
+- Security event correlation
+- Compliance reporting endpoints
+- Automated compliance checks

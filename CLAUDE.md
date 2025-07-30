@@ -3,16 +3,19 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
-This is a comprehensive Card Game API built with Go and the Gin web framework. The API provides full blackjack gameplay functionality, custom deck creation, card images, player management, security features, and complete OpenAPI documentation.
+This is a comprehensive Card Game API built with Go and the Gin web framework. The API provides full blackjack and cribbage gameplay functionality, custom deck creation, card images, player management, security features, complete OpenAPI documentation, and enterprise-grade observability. The codebase follows clean architecture principles with clear separation of concerns.
 
 ## Tech Stack
 - **Language**: Go 1.24.4
 - **Framework**: Gin (github.com/gin-gonic/gin)
 - **Module**: github.com/peteshima/cardgame-api
 - **UUID Generation**: Google UUID (github.com/google/uuid)
+- **Logging**: Zap (go.uber.org/zap) - High-performance structured logging
+- **Metrics**: OpenTelemetry (go.opentelemetry.io/otel) with Prometheus exporter
 - **Image Generation**: Go's image package with custom rendering
 - **Font Rendering**: golang.org/x/image/font with Go fonts
 - **Testing**: Testify (github.com/stretchr/testify/assert)
+- **Build Tools**: Make for automation, Docker for containerization
 
 ## Key Features
 - **Complete Blackjack Implementation**: Full game flow with automatic dealer play
@@ -26,18 +29,26 @@ This is a comprehensive Card Game API built with Go and the Gin web framework. T
 - **API Documentation**: Complete OpenAPI 3.0 specification with interactive Swagger UI
 - **Concurrent Games**: Thread-safe operations supporting multiple simultaneous games
 - **Player Management**: Add/remove players with UUID-based identification
+- **Observability**: Structured logging, OpenTelemetry metrics, health checks
+- **Production Ready**: Docker support, cross-platform builds, monitoring endpoints
 
 ## Common Commands
 
 ### Development
-- `go run .` - Start the development server on port 8080 (preferred)
-- `go run main.go` - Alternative way to start server
-- `go build` - Build the application binary
+- `make run` - Start the development server on port 8080 (preferred)
+- `make dev` - Start with hot reload for development
+- `make build` - Build the application binary for current platform
+- `make build-all` - Build for all platforms (Linux, Windows, macOS)
+- `make docker-build` - Build Docker image
+- `make clean` - Clean build artifacts
 - `go mod tidy` - Clean up dependencies
 
 ### Testing
-- `go test ./...` - Run all tests
-- `go test -v ./...` - Run tests with verbose output
+- `make test` - Run all tests with coverage
+- `make test-coverage` - Generate detailed coverage report
+- `make coverage-html` - Generate HTML coverage report
+- `make test-integration` - Run integration tests
+- `go test ./handlers -v` - Test specific package
 - `go test -run TestValidation` - Run specific test functions
 - `./test_images.sh` - Test card image functionality
 - `./test_docs.sh` - Test API documentation endpoints
@@ -46,17 +57,66 @@ This is a comprehensive Card Game API built with Go and the Gin web framework. T
 ### Card Generation
 - `go run generate_cards.go` - Generate all card images (52 cards × 3 sizes + 3 backs = 159 images)
 
+### Code Quality
+- `make fmt` - Format all Go code
+- `make lint` - Run golangci-lint checks
+- `make vet` - Run go vet checks
+- `make security-scan` - Run security vulnerability scans
+
 ### Dependencies
 - `go get <package>` - Add a new dependency
 - `go mod download` - Download dependencies
 
 ## Project Structure
 
+### Application Architecture
+```
+├── main.go              - Application entry point and server setup
+├── api/                 - Request/response DTOs
+│   ├── requests.go      - Input validation structures
+│   └── responses.go     - Output formatting structures
+├── config/              - Configuration and setup
+│   ├── config.go        - Environment configuration
+│   ├── logger.go        - Zap logger setup
+│   └── metrics.go       - OpenTelemetry metrics setup
+├── handlers/            - HTTP request handlers
+│   ├── blackjack_handlers.go    - Blackjack-specific endpoints
+│   ├── cribbage_handlers.go     - Cribbage-specific endpoints
+│   ├── custom_deck_handlers.go  - Custom deck endpoints
+│   ├── deal_handlers.go         - Card dealing endpoints
+│   ├── game_handlers.go         - Game management endpoints
+│   ├── handler_dependencies.go  - Dependency injection
+│   ├── reset_handlers.go        - Deck reset endpoints
+│   └── system_handlers.go       - Health, metrics, docs
+├── managers/            - State management
+│   ├── game_manager.go          - Thread-safe game state
+│   └── custom_deck_manager.go   - Custom deck storage
+├── middleware/          - HTTP middleware
+│   ├── logging.go       - Request/response logging
+│   ├── metrics.go       - Metrics collection
+│   └── recovery.go      - Panic recovery
+├── models/              - Domain models
+│   ├── card.go          - Card and deck entities
+│   ├── player.go        - Player entity
+│   ├── game.go          - Game entity
+│   ├── deck.go          - Deck operations
+│   ├── blackjack.go     - Blackjack-specific models
+│   ├── cribbage.go      - Cribbage-specific models
+│   └── custom_deck.go   - Custom deck models
+├── services/            - Business logic
+│   ├── game_service.go          - Core game operations
+│   ├── blackjack_service.go     - Blackjack game logic
+│   ├── cribbage_service.go      - Cribbage game logic
+│   └── custom_deck_service.go   - Custom deck operations
+└── validators/          - Input validation
+    └── validators.go    - Validation functions
+```
+
 ### Core Files
-- `main.go` - Main application with all HTTP handlers and routing
-- `card.go` - Card, Player, Game, and GameManager structs with blackjack logic
+- `main.go` - Application entry point, server setup, and routing
 - `go.mod` - Go module definition and dependencies
 - `go.sum` - Dependency checksums
+- `Makefile` - Build automation and common tasks
 
 ### Documentation
 - `README.md` - Complete user documentation with API examples
@@ -79,10 +139,13 @@ This is a comprehensive Card Game API built with Go and the Gin web framework. T
   - `small/` - 64x90 pixel card images  
   - `large/` - 200x280 pixel card images
 
-## API Endpoints (35 total)
+## API Endpoints (38 total)
 
-### System
+### System & Monitoring
 - `GET /hello` - Health check endpoint
+- `GET /metrics` - Prometheus metrics endpoint
+- `GET /stats` - Application statistics in JSON
+- `GET /version` - Build version information
 - `GET /api-docs` - Interactive API documentation
 - `GET /openapi.yaml` - OpenAPI specification
 - `GET /static/*` - Static file serving (card images)
@@ -122,6 +185,15 @@ This is a comprehensive Card Game API built with Go and the Gin web framework. T
 - `POST /game/:gameId/stand/:playerId` - Player stands
 - `GET /game/:gameId/results` - Get final game results
 
+### Cribbage Gameplay
+- `GET /game/new/cribbage` - Create new cribbage game (2 players, 1 deck)
+- `POST /game/:gameId/cribbage/start` - Start cribbage game (deals 6 cards each)
+- `POST /game/:gameId/cribbage/discard/:playerId` - Discard 2 cards to crib
+- `POST /game/:gameId/cribbage/play/:playerId` - Play a card during play phase
+- `POST /game/:gameId/cribbage/go/:playerId` - Say "go" when can't play
+- `GET /game/:gameId/cribbage/show` - Score hands and crib
+- `GET /game/:gameId/cribbage/state` - Get complete cribbage game state
+
 ### Deck Types
 - `GET /deck-types` - List available deck types with specifications
 
@@ -146,8 +218,14 @@ This is a comprehensive Card Game API built with Go and the Gin web framework. T
 - Trusted proxy configuration for production security
 
 ### Environment Variables
-- `TRUSTED_PROXIES` - Comma-separated list of trusted proxy IPs (e.g., "10.0.1.100,192.168.1.0/24")
-- `GIN_MODE` - Set to "release" for production deployment
+- `PORT` - Server port (default: 8080)
+- `LOG_LEVEL` - Logging level: DEBUG, INFO, WARN, ERROR (default: INFO)
+- `LOG_FORMAT` - Log format: json, console (default: json)
+- `GIN_MODE` - Gin mode: debug, release (default: release)
+- `TRUSTED_PROXIES` - Comma-separated list of trusted proxy IPs
+- `METRICS_ENABLED` - Enable metrics collection (default: true)
+- `OTEL_SERVICE_NAME` - OpenTelemetry service name (default: cardgame-api)
+- `OTEL_RESOURCE_ATTRIBUTES` - Additional resource attributes
 
 ### Security Features
 - All URI parameters validated with regex patterns
@@ -190,21 +268,90 @@ This is a comprehensive Card Game API built with Go and the Gin web framework. T
 - Visual testing for card images
 
 ### Common Development Tasks
-1. **Add new endpoint**: Update main.go routing, add handler function, update OpenAPI spec
-2. **Modify game logic**: Update card.go structs and methods, add tests
-3. **Add validation**: Update validation functions in main.go, add tests in validation_test.go
-4. **Update documentation**: Modify README.md and openapi.yaml
-5. **Add new card size**: Update generate_cards.go constants and functions
-6. **Custom deck features**: Modify CustomCard/CustomDeck structs in card.go, update CustomDeckManager methods
+
+1. **Add new endpoint**:
+   - Create handler function in appropriate `handlers/` file
+   - Add routing in `main.go`
+   - Add request/response DTOs in `api/`
+   - Update OpenAPI specification
+   - Add tests in `handlers/` test file
+
+2. **Modify game logic**:
+   - Update models in `models/` package
+   - Modify service logic in `services/`
+   - Update handler to use new service methods
+   - Add unit tests for models and services
+   - Add integration tests for complete flow
+
+3. **Add validation**:
+   - Add validation functions in `validators/validators.go`
+   - Use validators in handler functions
+   - Add tests in `validators/validators_test.go`
+
+4. **Update documentation**:
+   - Modify README.md for user-facing changes
+   - Update CLAUDE.md for development guidance
+   - Update openapi.yaml for API changes
+   - Update inline code comments
+
+5. **Add new game type**:
+   - Create model in `models/` (e.g., `poker.go`)
+   - Create service in `services/` (e.g., `poker_service.go`)
+   - Create handlers in `handlers/` (e.g., `poker_handlers.go`)
+   - Add routing in `main.go`
+   - Update OpenAPI spec
+   - Add comprehensive tests
+
+6. **Add new metrics**:
+   - Define metric in `config/metrics.go`
+   - Instrument code in appropriate service/handler
+   - Update metrics documentation
 
 ## Best Practices
-- Always update the openapi documentation whenever the api changes
 
-## Code Guidelines
-- If you add new functions or classes, make sure to add code comments, 1-3 lines describing what it does and why it is needed
+### API Development
+- Always update the OpenAPI documentation when changing endpoints
+- Use appropriate HTTP status codes and error messages
+- Validate all input parameters before processing
+- Return consistent response formats
 
-## Security Considerations
-- Make sure to take security considerations in for all updates
+### Code Organization
+- Follow clean architecture principles - handlers → services → models
+- Keep business logic in services, not handlers
+- Use dependency injection for testability
+- Separate concerns into appropriate packages
 
-## Testing Guidelines
-- When making any changes please make sure all tests pass and fix them if they do not.  Code coverage should be 80% or above
+### Code Guidelines
+- Add code comments for all exported functions (1-3 lines)
+- Use meaningful variable and function names
+- Keep functions small and focused (< 50 lines preferred)
+- Handle errors explicitly, don't ignore them
+- Use early returns to reduce nesting
+
+### Testing
+- Write unit tests for all new functions
+- Maintain code coverage above 80%
+- Use table-driven tests for multiple scenarios
+- Mock external dependencies in unit tests
+- Write integration tests for complete workflows
+
+### Security
+- Validate and sanitize all user input
+- Use parameterized queries (if adding database)
+- Never log sensitive information
+- Keep dependencies updated
+- Run security scans before committing
+
+### Performance
+- Use read/write mutexes appropriately
+- Avoid unnecessary allocations in hot paths
+- Profile code for performance bottlenecks
+- Use buffered channels where appropriate
+- Consider caching for expensive operations
+
+### Documentation
+- Update README.md for user-facing features
+- Update CLAUDE.md for development changes
+- Keep OpenAPI spec in sync with code
+- Document complex algorithms inline
+- Update SECURITY.md for security changes
