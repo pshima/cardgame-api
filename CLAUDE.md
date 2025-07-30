@@ -205,3 +205,6 @@ This is a comprehensive Card Game API built with Go and the Gin web framework. T
 
 ## Security Considerations
 - Make sure to take security considerations in for all updates
+
+## Testing Guidelines
+- When making any changes please make sure all tests pass and fix them if they do not.  Code coverage should be 80% or above

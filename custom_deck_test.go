@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/peteshima/cardgame-api/models"
 )
 
 func TestDeckTypeString(t *testing.T) {
@@ -120,20 +121,20 @@ func TestDeckNameWordSafety(t *testing.T) {
 func TestNewCustomDeck(t *testing.T) {
 	tests := []struct {
 		numDecks     int
-		deckType     DeckType
+		deckType     models.DeckType
 		expectedCards int
 	}{
-		{1, Standard, 52},
-		{2, Standard, 104},
-		{1, Spanish21, 48}, // No 10s
-		{2, Spanish21, 96}, // No 10s, 2 decks
-		{6, Spanish21, 288}, // 6 decks for Spanish 21
-		{0, Standard, 52}, // Should default to 1
-		{-1, Spanish21, 48}, // Should default to 1
+		{1, models.Standard, 52},
+		{2, models.Standard, 104},
+		{1, models.Spanish21, 48}, // No 10s
+		{2, models.Spanish21, 96}, // No 10s, 2 decks
+		{6, models.Spanish21, 288}, // 6 decks for Spanish 21
+		{0, models.Standard, 52}, // Should default to 1
+		{-1, models.Spanish21, 48}, // Should default to 1
 	}
 
 	for _, test := range tests {
-		deck := NewCustomDeck(test.numDecks, test.deckType)
+		deck := models.NewCustomDeck(test.numDecks, test.deckType)
 		assert.Equal(t, test.expectedCards, len(deck.Cards))
 		assert.Equal(t, test.expectedCards, deck.RemainingCards())
 		assert.Equal(t, test.deckType, deck.DeckType)
@@ -143,20 +144,20 @@ func TestNewCustomDeck(t *testing.T) {
 }
 
 func TestSpanish21DeckComposition(t *testing.T) {
-	deck := NewCustomDeck(1, Spanish21)
+	deck := models.NewCustomDeck(1, models.Spanish21)
 	
 	// Should have 48 cards (52 - 4 tens)
 	assert.Equal(t, 48, len(deck.Cards))
 	
 	// Count cards by rank
-	rankCounts := make(map[Rank]int)
+	rankCounts := make(map[models.Rank]int)
 	for _, card := range deck.Cards {
 		rankCounts[card.Rank]++
 	}
 	
 	// Should have 4 of each rank except Ten
-	for rank := Ace; rank <= King; rank++ {
-		if rank == Ten {
+	for rank := models.Ace; rank <= models.King; rank++ {
+		if rank == models.Ten {
 			assert.Equal(t, 0, rankCounts[rank], "Spanish21 deck should have no 10s")
 		} else {
 			assert.Equal(t, 4, rankCounts[rank], "Should have 4 of each rank except 10")
@@ -164,32 +165,32 @@ func TestSpanish21DeckComposition(t *testing.T) {
 	}
 	
 	// Verify all suits are present for non-Ten cards
-	suitCounts := make(map[Suit]int)
+	suitCounts := make(map[models.Suit]int)
 	for _, card := range deck.Cards {
 		suitCounts[card.Suit]++
 	}
 	
 	// Should have 12 cards of each suit (13 - 1 ten)
-	for suit := Hearts; suit <= Spades; suit++ {
+	for suit := models.Hearts; suit <= models.Spades; suit++ {
 		assert.Equal(t, 12, suitCounts[suit])
 	}
 }
 
 func TestMultiDeckSpanish21(t *testing.T) {
-	deck := NewCustomDeck(2, Spanish21)
+	deck := models.NewCustomDeck(2, models.Spanish21)
 	
 	// Should have 96 cards (48 * 2)
 	assert.Equal(t, 96, len(deck.Cards))
 	
 	// Count cards by rank
-	rankCounts := make(map[Rank]int)
+	rankCounts := make(map[models.Rank]int)
 	for _, card := range deck.Cards {
 		rankCounts[card.Rank]++
 	}
 	
 	// Should have 8 of each rank except Ten (4 per deck * 2 decks)
-	for rank := Ace; rank <= King; rank++ {
-		if rank == Ten {
+	for rank := models.Ace; rank <= models.King; rank++ {
+		if rank == models.Ten {
 			assert.Equal(t, 0, rankCounts[rank])
 		} else {
 			assert.Equal(t, 8, rankCounts[rank])
@@ -199,9 +200,9 @@ func TestMultiDeckSpanish21(t *testing.T) {
 
 func TestResetWithDecksAndType(t *testing.T) {
 	// Start with a standard deck
-	deck := NewCustomDeck(1, Standard)
+	deck := models.NewCustomDeck(1, models.Standard)
 	assert.Equal(t, 52, len(deck.Cards))
-	assert.Equal(t, Standard, deck.DeckType)
+	assert.Equal(t, models.Standard, deck.DeckType)
 	
 	// Deal some cards
 	deck.Deal()
@@ -209,42 +210,42 @@ func TestResetWithDecksAndType(t *testing.T) {
 	assert.Equal(t, 50, deck.RemainingCards())
 	
 	// Reset to Spanish21
-	deck.ResetWithDecksAndType(2, Spanish21)
+	deck.ResetWithDecksAndType(2, models.Spanish21)
 	assert.Equal(t, 96, len(deck.Cards))
-	assert.Equal(t, Spanish21, deck.DeckType)
+	assert.Equal(t, models.Spanish21, deck.DeckType)
 	
 	// Verify no 10s in the reset deck
 	for _, card := range deck.Cards {
-		assert.NotEqual(t, Ten, card.Rank, "Spanish21 deck should not contain 10s")
+		assert.NotEqual(t, models.Ten, card.Rank, "Spanish21 deck should not contain 10s")
 	}
 }
 
 func TestParseDeckType(t *testing.T) {
 	tests := []struct {
 		input    string
-		expected DeckType
+		expected models.DeckType
 	}{
-		{"spanish21", Spanish21},
-		{"Spanish21", Spanish21},
-		{"SPANISH21", Spanish21},
-		{"spanish_21", Spanish21},
-		{"spanish-21", Spanish21},
-		{"standard", Standard},
-		{"Standard", Standard},
-		{"normal", Standard},
-		{"regular", Standard},
-		{"invalid", Standard}, // Default
-		{"", Standard},        // Default
+		{"spanish21", models.Spanish21},
+		{"Spanish21", models.Spanish21},
+		{"SPANISH21", models.Spanish21},
+		{"spanish_21", models.Spanish21},
+		{"spanish-21", models.Spanish21},
+		{"standard", models.Standard},
+		{"Standard", models.Standard},
+		{"normal", models.Standard},
+		{"regular", models.Standard},
+		{"invalid", models.Standard}, // Default
+		{"", models.Standard},        // Default
 	}
 
 	for _, test := range tests {
-		result := parseDeckType(test.input)
+		result := models.ParseDeckType(test.input)
 		assert.Equal(t, test.expected, result, "Input: "+test.input)
 	}
 }
 
 func TestCreateNewGameWithTypeEndpoint(t *testing.T) {
-	router := setupSessionRouter()
+	router := setupRouter()
 
 	tests := []struct {
 		decks        string
@@ -281,13 +282,13 @@ func TestCreateNewGameWithTypeEndpoint(t *testing.T) {
 			assert.Equal(t, float64(test.expectedCards), response["remaining_cards"])
 			assert.Contains(t, response["message"], test.expectedType)
 		} else {
-			assert.Equal(t, "Invalid decks parameter", response["error"])
+			assert.Equal(t, "Invalid decks parameter (must be 1-100)", response["error"])
 		}
 	}
 }
 
 func TestResetDeckWithTypeEndpoint(t *testing.T) {
-	router := setupSessionRouter()
+	router := setupRouter()
 
 	// Create a standard game first
 	w := httptest.NewRecorder()
@@ -315,7 +316,7 @@ func TestResetDeckWithTypeEndpoint(t *testing.T) {
 }
 
 func TestSpanish21GameWorkflow(t *testing.T) {
-	router := setupSessionRouter()
+	router := setupRouter()
 
 	// Create Spanish21 game with 6 decks (typical for Spanish21)
 	w := httptest.NewRecorder()
@@ -357,7 +358,7 @@ func TestSpanish21GameWorkflow(t *testing.T) {
 	for _, cardInterface := range cards {
 		card := cardInterface.(map[string]interface{})
 		rank := card["rank"].(float64)
-		assert.NotEqual(t, float64(Ten), rank, "Spanish21 should not deal 10s")
+		assert.NotEqual(t, float64(models.Ten), rank, "Spanish21 should not deal 10s")
 	}
 
 	// Get game info
@@ -373,7 +374,7 @@ func TestSpanish21GameWorkflow(t *testing.T) {
 }
 
 func TestConcurrentDifferentDeckTypes(t *testing.T) {
-	router := setupSessionRouter()
+	router := setupRouter()
 
 	// Create multiple games with different deck types
 	var gameIDs []string
@@ -435,7 +436,7 @@ func TestConcurrentDifferentDeckTypes(t *testing.T) {
 }
 
 func TestListDeckTypesEndpoint(t *testing.T) {
-	router := setupSessionRouter()
+	router := setupRouter()
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/deck-types", nil)

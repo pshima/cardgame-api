@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/peteshima/cardgame-api/validators"
 )
 
 func TestValidateUUID(t *testing.T) {
@@ -24,7 +25,7 @@ func TestValidateUUID(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		result := validateUUID(test.input)
+		result := validators.ValidateUUID(test.input)
 		assert.Equal(t, test.expected, result, test.desc)
 	}
 }
@@ -44,7 +45,7 @@ func TestValidatePlayerID(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		result := validatePlayerID(test.input)
+		result := validators.ValidatePlayerID(test.input)
 		assert.Equal(t, test.expected, result, test.desc)
 	}
 }
@@ -69,7 +70,7 @@ func TestValidateNumber(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		num, valid := validateNumber(test.input)
+		num, valid := validators.ValidateNumber(test.input)
 		assert.Equal(t, test.expectedValid, valid, test.desc)
 		if valid {
 			assert.Equal(t, test.expectedNum, num, test.desc)
@@ -98,7 +99,7 @@ func TestValidateDeckType(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		result := validateDeckType(test.input)
+		result := validators.ValidateDeckType(test.input)
 		assert.Equal(t, test.expected, result, test.desc)
 	}
 }
@@ -123,7 +124,7 @@ func TestValidatePileID(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		result := validatePileID(test.input)
+		result := validators.ValidatePileID(test.input)
 		assert.Equal(t, test.expected, result, test.desc)
 	}
 }
@@ -150,7 +151,7 @@ func TestValidateBoolean(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		result := validateBoolean(test.input)
+		result := validators.ValidateBoolean(test.input)
 		assert.Equal(t, test.expected, result, test.desc)
 	}
 }
@@ -174,7 +175,7 @@ func TestSanitizeString(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		result := sanitizeString(test.input, test.maxLength)
+		result := validators.SanitizeString(test.input, test.maxLength)
 		assert.Equal(t, test.expected, result, test.desc)
 	}
 }

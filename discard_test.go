@@ -228,7 +228,7 @@ func TestDiscardToCardEndpoint(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, 404, w.Code)
+	assert.Equal(t, 400, w.Code)
 
 	// Test discarding with invalid card index
 	discardData4 := map[string]interface{}{

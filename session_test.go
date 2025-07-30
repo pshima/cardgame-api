@@ -9,12 +9,33 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/peteshima/cardgame-api/config"
+	"github.com/peteshima/cardgame-api/handlers"
+	"github.com/peteshima/cardgame-api/managers"
 )
 
 func setupSessionRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)
-	gameManager = NewGameManager()
-	r := gin.Default()
+	
+	// Initialize logger and metrics for tests
+	logger := config.InitLogger()
+	_, metricsRegistry := config.InitMetrics(logger)
+	
+	// Initialize managers
+	gameManager := managers.NewGameManager()
+	customDeckManager := managers.NewCustomDeckManager()
+	
+	// Create handler dependencies
+	deps := handlers.NewHandlerDependencies(
+		logger, 
+		metricsRegistry, 
+		gameManager, 
+		customDeckManager, 
+		time.Now(),
+	)
+	
+	r := gin.New()
 
 	r.GET("/hello", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -22,19 +43,19 @@ func setupSessionRouter() *gin.Engine {
 		})
 	})
 
-	r.GET("/deck-types", listDeckTypes)
-	r.GET("/game/new", createNewGame)
-	r.GET("/game/new/:decks", createNewGameWithDecks)
-	r.GET("/game/new/:decks/:type", createNewGameWithType)
-	r.GET("/game/:gameId/shuffle", shuffleDeck)
-	r.GET("/game/:gameId", getGameInfo)
-	r.GET("/game/:gameId/deal", dealCard)
-	r.GET("/game/:gameId/deal/:count", dealCards)
-	r.GET("/game/:gameId/reset", resetDeck)
-	r.GET("/game/:gameId/reset/:decks", resetDeckWithDecks)
-	r.GET("/game/:gameId/reset/:decks/:type", resetDeckWithType)
-	r.DELETE("/game/:gameId", deleteGame)
-	r.GET("/games", listGames)
+	r.GET("/deck-types", deps.ListDeckTypes)
+	r.GET("/game/new", deps.CreateNewGame)
+	r.GET("/game/new/:decks", deps.CreateNewGameWithDecks)
+	r.GET("/game/new/:decks/:type", deps.CreateNewGameWithType)
+	r.GET("/game/:gameId/shuffle", deps.ShuffleDeck)
+	r.GET("/game/:gameId", deps.GetGameInfo)
+	r.GET("/game/:gameId/deal", deps.DealCard)
+	r.GET("/game/:gameId/deal/:count", deps.DealCards)
+	r.GET("/game/:gameId/reset", deps.ResetDeck)
+	r.GET("/game/:gameId/reset/:decks", deps.ResetDeckWithDecks)
+	r.GET("/game/:gameId/reset/:decks/:type", deps.ResetDeckWithType)
+	r.DELETE("/game/:gameId", deps.DeleteGame)
+	r.GET("/games", deps.ListGames)
 
 	return r
 }
@@ -173,7 +194,7 @@ func TestCreateNewGameWithDecksEndpoint(t *testing.T) {
 			assert.Contains(t, response, "game_id")
 			assert.Equal(t, float64(test.expected), response["remaining_cards"])
 		} else {
-			assert.Equal(t, "Invalid decks parameter", response["error"])
+			assert.Equal(t, "Invalid decks parameter (must be 1-100)", response["error"])
 		}
 	}
 }
@@ -196,12 +217,12 @@ func TestGameNotFoundErrors(t *testing.T) {
 		req, _ := http.NewRequest("GET", endpoint, nil)
 		router.ServeHTTP(w, req)
 
-		assert.Equal(t, 404, w.Code)
+		assert.Equal(t, 400, w.Code)
 		
 		var response map[string]string
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
-		assert.Equal(t, "Game not found", response["error"])
+		assert.Equal(t, "Invalid game ID format", response["error"])
 	}
 }
 

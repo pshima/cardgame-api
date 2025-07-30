@@ -1,6 +1,11 @@
-# Multi-stage build for minimal production image
+# Multi-stage multi-architecture build for minimal production image
 # Build stage
-FROM golang:1.24.4-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.24.4-alpine AS builder
+
+# Build arguments for cross-compilation
+ARG TARGETOS
+ARG TARGETARCH
+ARG BUILDPLATFORM
 
 # Install build dependencies and security updates
 RUN apk add --no-cache git ca-certificates tzdata && \
@@ -20,16 +25,21 @@ COPY --chown=builder:builder go.mod go.sum ./
 RUN go mod download && \
     go mod verify
 
-# Copy source code
-COPY --chown=builder:builder *.go ./
+# Copy all source code including subdirectories
+COPY --chown=builder:builder . .
 
 # Switch to non-root user for building
 USER builder
 
-# Build the application with security flags
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-    -a -installsuffix cgo \
-    -ldflags="-w -s -X main.version=1.0.0 -X main.buildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+# Build information
+ARG VERSION=dev
+ARG BUILD_TIME
+ARG COMMIT_HASH
+
+# Build the application with security flags and build info
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build \
+    -trimpath \
+    -ldflags="-w -s -X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)} -X main.CommitHash=${COMMIT_HASH:-unknown}" \
     -o cardgame-api .
 
 # Runtime stage - using hardened Alpine
