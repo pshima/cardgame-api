@@ -3,9 +3,11 @@ package models
 // Player represents a game participant with a unique ID, name, and hand of cards.
 // Players can be human users or the dealer, identified by UUID or "dealer" respectively.
 type Player struct {
-	ID   string  `json:"id"`
-	Name string  `json:"name"`
-	Hand []*Card `json:"hand"`
+	ID       string  `json:"id"`
+	Name     string  `json:"name"`
+	Hand     []*Card `json:"hand"`
+	Standing bool    `json:"standing,omitempty"`
+	Busted   bool    `json:"busted,omitempty"`
 }
 
 // AddCard adds a new card to the player's hand.

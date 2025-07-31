@@ -32,7 +32,7 @@ New to the Card Game API? Start here:
 
 ## Features
 
-- **Multiple Card Games**: Blackjack, Cribbage (with full scoring), Poker, War, Go Fish
+- **Multiple Card Games**: Blackjack, Glitchjack (blackjack with random deck), Cribbage (with full scoring), Poker, War, Go Fish
 - **Multiple Deck Types**: Standard 52-card, Spanish 21 (48-card, no 10s)
 - **Custom Decks**: Create completely free-form custom decks with custom cards, suits, ranks, and attributes
 - **Player Management**: Add/remove players, track individual hands
@@ -159,6 +159,15 @@ Create completely free-form custom decks with custom cards, suits, ranks, and at
 - `POST /game/:gameId/stand/:playerId` - Player stands (ends turn)
 - `GET /game/:gameId/results` - Get game results and winners
 
+### Glitchjack Game Flow
+- `GET /game/new/glitchjack` - Create new Glitchjack game (1 random deck, 6 max players)
+- `GET /game/new/glitchjack/:decks` - Create Glitchjack game with multiple random decks
+- `GET /game/new/glitchjack/:decks/:players` - Create Glitchjack game with specified decks and max players
+- `POST /game/:gameId/glitchjack/start` - Start Glitchjack game (deals initial cards)
+- `POST /game/:gameId/glitchjack/hit/:playerId` - Player takes a card
+- `POST /game/:gameId/glitchjack/stand/:playerId` - Player stands (ends turn)
+- `GET /game/:gameId/glitchjack/results` - Get game results and winners
+
 ### Cribbage Game Flow
 - `GET /game/new/cribbage` - Create new cribbage game (2 players, 1 deck)
 - `POST /game/:gameId/cribbage/start` - Start cribbage game (deals 6 cards each)
@@ -206,6 +215,7 @@ Create completely free-form custom decks with custom cards, suits, ranks, and at
 ## Game Types
 
 - **Blackjack**: Full blackjack implementation with automatic dealer play
+- **Glitchjack**: Blackjack variant with randomly generated deck composition (each deck contains 52 random cards from standard deck, can have duplicates)
 - **Cribbage**: Complete cribbage implementation with pegging, hand scoring, and crib
 - **Poker**: Framework ready (cards, players, hands)
 - **War**: Framework ready
@@ -233,6 +243,25 @@ Create completely free-form custom decks with custom cards, suits, ranks, and at
 - **Push**: Same value as dealer (tie)
 - **Bust**: Hand value over 21 (automatic loss)
 - **Lose**: Lower value than dealer
+
+## Glitchjack Rules Implemented
+
+### Deck Composition
+- **Random Generation**: Each deck contains 52 cards randomly selected from standard playing cards
+- **Duplicates Allowed**: Multiple copies of the same card can appear in a single deck (e.g., multiple Ace of Hearts)
+- **Multi-Deck Support**: Can create games with multiple random decks (each independently generated)
+- **Fresh Each Game**: Each new game generates a completely new random deck composition
+
+### Game Mechanics
+- **Identical to Blackjack**: Same hand values, dealer rules, and win conditions as standard Blackjack
+- **Hand Values**: Aces (1 or 11), Face cards (10), Number cards (face value)
+- **Dealer Rules**: Hits on 16 or less, stands on 17 or more
+- **Win Conditions**: Same as Blackjack (21, bust, push, etc.)
+
+### Strategic Differences
+- **Card Counting Impossible**: Random deck composition makes traditional card counting ineffective
+- **Unpredictable Probabilities**: Each game has unique card distribution
+- **Same Rules, Different Experience**: Familiar gameplay with unpredictable deck dynamics
 
 ## Cribbage Rules Implemented
 
@@ -1061,6 +1090,63 @@ Example Grafana dashboards are available in `deployments/grafana/`:
 - **API Overview**: Request rates, latencies, error rates
 - **Business Metrics**: Active games, player counts, game outcomes
 - **System Health**: CPU, memory, goroutines, GC metrics
+
+## Temporary instructions
+```
+docker build --platform linux/amd64 -t cardgame-api:latest .
+docker save cardgame-api:latest > cardgame-api.tar
+scp cardgame-api.tar root@glitchjack.com:/tmp/
+
+scp docker-compose.prod.yml root@glitchjack.com:/opt/cardgame-api/
+
+docker load -i /tmp/cardgame-api.tar
+
+# On the production server
+cd /opt/cardgame-api
+docker-compose -f docker-compose.prod.yml up -d
+
+# View logs
+docker-compose -f docker-compose.prod.yml logs -f
+
+# Stop the service
+docker-compose -f docker-compose.prod.yml down
+
+
+
+
+
+docker build --platform linux/amd64 -t blackjack-casino/frontend:latest .
+docker save blackjack-casino/frontend:latest > blackjack-frontend.tar
+scp blackjack-frontend.tar root@glitchjack.com:/tmp/
+
+scp docker-compose.prod.yml root@glitchjack.com:/opt/cardgame-api/blackjackfrontend-compose.prod.yaml
+
+
+  docker build \
+    --build-arg VITE_API_BASE_URL=https://your-api.com \
+    -t blackjack-casino/frontend:latest .
+
+
+cp .env.example .env
+
+  # Start the application
+  docker-compose up -d
+
+  # With Traefik reverse proxy (includes SSL)
+  docker-compose --profile proxy up -d
+
+  3. Direct Docker Run
+
+  docker run -d \
+    --name blackjack-frontend \
+    -p 3000:8080 \
+    --restart unless-stopped \
+    --security-opt no-new-privileges:true \
+    --memory 512m \
+    --cpus 1.0 \
+    blackjack-casino/frontend:latest
+
+```
 
 ## Contributing
 

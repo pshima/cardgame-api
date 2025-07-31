@@ -69,7 +69,7 @@ func NewGameWithType(numDecks int, deckType DeckType, gameType GameType, maxPlay
 		Status:        GameWaiting,
 		Deck:          NewCustomDeck(numDecks, deckType),
 		Players:       []*Player{},
-		Dealer:        &Player{ID: "dealer", Name: "Dealer", Hand: []*Card{}},
+		Dealer:        &Player{ID: "dealer", Name: "Dealer", Hand: []*Card{}, Standing: false, Busted: false},
 		DiscardPiles:  make(map[string]*DiscardPile),
 		MaxPlayers:    maxPlayers,
 		CurrentPlayer: 0,
@@ -101,9 +101,11 @@ func (g *Game) AddPlayer(name string) *Player {
 	}
 	
 	player := &Player{
-		ID:   uuid.New().String(),
-		Name: name,
-		Hand: []*Card{},
+		ID:       uuid.New().String(),
+		Name:     name,
+		Hand:     []*Card{},
+		Standing: false,
+		Busted:   false,
 	}
 	g.Players = append(g.Players, player)
 	return player

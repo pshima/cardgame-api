@@ -23,6 +23,7 @@ type HandlerDependencies struct {
 	GameService         *services.GameService
 	BlackjackService    *services.BlackjackService
 	CribbageService     *services.CribbageService
+	GlitchjackService   *services.GlitchjackService
 	CustomDeckService   *services.CustomDeckService
 	GameManager         *managers.GameManager
 	CustomDeckManager   *managers.CustomDeckManager
@@ -43,6 +44,7 @@ func NewHandlerDependencies(
 		GameService:         services.NewGameService(gameManager),
 		BlackjackService:    services.NewBlackjackService(gameManager),
 		CribbageService:     services.NewCribbageService(gameManager),
+		GlitchjackService:   services.NewGlitchjackService(gameManager),
 		CustomDeckService:   services.NewCustomDeckService(customDeckManager),
 		GameManager:         gameManager,
 		CustomDeckManager:   customDeckManager,
@@ -179,6 +181,24 @@ func convertDealerInfo(dealer *models.Player, baseURL string) gin.H {
 		"hand_value":    dealerValue,
 		"has_blackjack": dealerBlackjack,
 		"is_busted":     dealer.IsBusted(),
+	}
+}
+
+// convertPlayerWithImages converts a single player to include card images
+func convertPlayerWithImages(player *models.Player, baseURL string) gin.H {
+	handWithImages := convertCardsWithImages(player.Hand, baseURL)
+	handValue, hasBlackjack := player.BlackjackHandValue()
+	
+	return gin.H{
+		"id":            player.ID,
+		"name":          player.Name,
+		"hand":          handWithImages,
+		"hand_size":     player.HandSize(),
+		"hand_value":    handValue,
+		"has_blackjack": hasBlackjack,
+		"is_busted":     player.IsBusted(),
+		"standing":      player.Standing,
+		"busted":        player.Busted,
 	}
 }
 

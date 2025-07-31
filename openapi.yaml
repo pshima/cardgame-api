@@ -5,7 +5,7 @@ info:
     A comprehensive Go/Gin API for card games with full blackjack support, player hand tracking, multi-deck functionality, and custom deck creation.
     
     ## Features
-    - Multiple Card Games: Blackjack, Poker, War, Go Fish, Cribbage
+    - Multiple Card Games: Blackjack, Glitchjack (blackjack with random deck), Poker, War, Go Fish, Cribbage
     - Multiple Deck Types: Standard 52-card, Spanish 21 (48-card, no 10s)
     - Custom Decks: Create custom decks with completely free-form cards, custom suits, ranks, and attributes
     - Player Management: Add/remove players, track individual hands
@@ -47,6 +47,8 @@ tags:
     description: Card discard operations
   - name: blackjack-gameplay
     description: Blackjack-specific game flow operations
+  - name: glitchjack-gameplay
+    description: Glitchjack-specific game flow operations (blackjack with random deck)
   - name: custom-decks
     description: Custom deck creation and management operations
 
@@ -850,6 +852,164 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BlackjackResultsResponse'
+        '400':
+          $ref: '#/components/responses/InvalidGameId'
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+
+  /game/new/glitchjack:
+    get:
+      tags:
+        - glitchjack-gameplay
+      summary: Create a new Glitchjack game
+      description: Creates a new Glitchjack game with randomly generated deck composition (1 deck, 6 max players)
+      responses:
+        '200':
+          description: Glitchjack game created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlitchjackGameResponse'
+
+  /game/new/glitchjack/{decks}:
+    get:
+      tags:
+        - glitchjack-gameplay
+      summary: Create a new Glitchjack game with multiple decks
+      description: Creates a new Glitchjack game with specified number of randomly generated decks
+      parameters:
+        - name: decks
+          in: path
+          required: true
+          description: Number of random decks to create (1-100)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: Glitchjack game created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlitchjackGameResponse'
+        '400':
+          $ref: '#/components/responses/InvalidParameter'
+
+  /game/new/glitchjack/{decks}/{players}:
+    get:
+      tags:
+        - glitchjack-gameplay
+      summary: Create a new Glitchjack game with decks and players
+      description: Creates a new Glitchjack game with specified number of random decks and max players
+      parameters:
+        - name: decks
+          in: path
+          required: true
+          description: Number of random decks to create (1-100)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: players
+          in: path
+          required: true
+          description: Maximum number of players (1-10)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
+      responses:
+        '200':
+          description: Glitchjack game created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlitchjackGameResponse'
+        '400':
+          $ref: '#/components/responses/InvalidParameter'
+
+  /game/{gameId}/glitchjack/start:
+    post:
+      tags:
+        - glitchjack-gameplay
+      summary: Start a Glitchjack game
+      description: Starts a Glitchjack game by dealing 2 cards to each player and dealer from random deck
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Glitchjack game started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlitchjackStartResponse'
+        '400':
+          description: Cannot start game
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+
+  /game/{gameId}/glitchjack/hit/{playerId}:
+    post:
+      tags:
+        - glitchjack-gameplay
+      summary: Player takes a card in Glitchjack
+      description: Deals an additional card to the specified player in Glitchjack
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+        - $ref: '#/components/parameters/PlayerId'
+      responses:
+        '200':
+          description: Card dealt to player
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlitchjackHitResponse'
+        '400':
+          $ref: '#/components/responses/InvalidParameter'
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+
+  /game/{gameId}/glitchjack/stand/{playerId}:
+    post:
+      tags:
+        - glitchjack-gameplay
+      summary: Player stands in Glitchjack
+      description: Player ends their turn and stands with current hand
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+        - $ref: '#/components/parameters/PlayerId'
+      responses:
+        '200':
+          description: Player stands
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlitchjackStandResponse'
+        '400':
+          $ref: '#/components/responses/InvalidParameter'
+        '404':
+          $ref: '#/components/responses/GameNotFound'
+
+  /game/{gameId}/glitchjack/results:
+    get:
+      tags:
+        - glitchjack-gameplay
+      summary: Get Glitchjack game results
+      description: Returns the final results of a completed Glitchjack game
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Game results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlitchjackResultsResponse'
         '400':
           $ref: '#/components/responses/InvalidGameId'
         '404':
@@ -1696,6 +1856,189 @@ components:
         - dealer
         - players
         - results
+
+    # Glitchjack Schemas
+    GlitchjackGameResponse:
+      type: object
+      properties:
+        game_id:
+          type: string
+          format: uuid
+          description: Unique identifier for the created game
+        game_type:
+          type: string
+          enum: [Glitchjack]
+          description: Type of game
+        deck_name:
+          type: string
+          description: Generated name for the deck
+        message:
+          type: string
+          description: Success message
+          example: "New Glitchjack game created with random deck composition"
+        remaining_cards:
+          type: integer
+          description: Number of cards remaining in the deck
+        max_players:
+          type: integer
+          description: Maximum number of players allowed
+        num_decks:
+          type: integer
+          description: Number of decks in the game (only present for multi-deck games)
+        created:
+          type: string
+          format: date-time
+          description: When the game was created
+      required:
+        - game_id
+        - game_type
+        - deck_name
+        - message
+        - remaining_cards
+        - max_players
+        - created
+
+    GlitchjackStartResponse:
+      type: object
+      properties:
+        game_id:
+          type: string
+          format: uuid
+        game_type:
+          type: string
+          enum: [Glitchjack]
+        status:
+          type: string
+          enum: [in_progress]
+        current_player:
+          type: integer
+          description: Index of the current player (0-based)
+        message:
+          type: string
+          example: "Glitchjack game started"
+        remaining_cards:
+          type: integer
+        players:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlayerWithCards'
+        dealer:
+          $ref: '#/components/schemas/PlayerWithCards'
+      required:
+        - game_id
+        - game_type
+        - status
+        - current_player
+        - message
+        - remaining_cards
+        - players
+        - dealer
+
+    GlitchjackHitResponse:
+      type: object
+      properties:
+        game_id:
+          type: string
+          format: uuid
+        player:
+          $ref: '#/components/schemas/PlayerWithCards'
+        hand_value:
+          type: integer
+          description: Current hand value
+        busted:
+          type: boolean
+          description: Whether the player busted
+        current_player:
+          type: integer
+          description: Index of the current player (-1 if game finished)
+        game_status:
+          type: string
+          enum: [in_progress, finished]
+        message:
+          type: string
+          example: "Card dealt"
+        dealer:
+          $ref: '#/components/schemas/PlayerWithCards'
+          description: Dealer information (only present if game finished)
+      required:
+        - game_id
+        - player
+        - hand_value
+        - busted
+        - current_player
+        - game_status
+        - message
+
+    GlitchjackStandResponse:
+      type: object
+      properties:
+        game_id:
+          type: string
+          format: uuid
+        player_id:
+          type: string
+          description: ID of the player who stood
+        message:
+          type: string
+          example: "Player stands"
+        current_player:
+          type: integer
+          description: Index of the current player (-1 if game finished)
+        game_status:
+          type: string
+          enum: [in_progress, finished]
+        dealer:
+          $ref: '#/components/schemas/PlayerWithCards'
+          description: Dealer information (only present if game finished)
+      required:
+        - game_id
+        - player_id
+        - message
+        - current_player
+        - game_status
+
+    GlitchjackResultsResponse:
+      type: object
+      properties:
+        game_id:
+          type: string
+          format: uuid
+        game_type:
+          type: string
+          enum: [Glitchjack]
+        status:
+          type: string
+          enum: [finished]
+        dealer:
+          $ref: '#/components/schemas/PlayerWithCards'
+        dealer_value:
+          type: integer
+          description: Dealer's final hand value
+        players:
+          type: array
+          items:
+            type: object
+            properties:
+              player:
+                $ref: '#/components/schemas/PlayerWithCards'
+              hand_value:
+                type: integer
+                description: Player's final hand value
+              result:
+                type: string
+                enum: [blackjack, win, push, bust, lose]
+                description: Player's result against the dealer
+            required:
+              - player
+              - hand_value
+              - result
+      required:
+        - game_id
+        - game_type
+        - status
+        - dealer
+        - dealer_value
+        - players
 
     # Custom Deck Schemas
     CreateCustomDeckRequest:

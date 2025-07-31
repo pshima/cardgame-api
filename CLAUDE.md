@@ -19,6 +19,7 @@ This is a comprehensive Card Game API built with Go and the Gin web framework. T
 
 ## Key Features
 - **Complete Blackjack Implementation**: Full game flow with automatic dealer play
+- **Glitchjack Support**: Blackjack variant with randomly generated deck composition
 - **Cribbage Support**: Full 2-player cribbage implementation with pegging and scoring
 - **Multiple Deck Types**: Standard (52 cards) and Spanish 21 (48 cards, no 10s)
 - **Custom Deck Creation**: Free-form custom decks with custom cards, suits, ranks, and attributes
@@ -139,7 +140,7 @@ This is a comprehensive Card Game API built with Go and the Gin web framework. T
   - `small/` - 64x90 pixel card images  
   - `large/` - 200x280 pixel card images
 
-## API Endpoints (38 total)
+## API Endpoints (45 total)
 
 ### System & Monitoring
 - `GET /hello` - Health check endpoint
@@ -184,6 +185,15 @@ This is a comprehensive Card Game API built with Go and the Gin web framework. T
 - `POST /game/:gameId/hit/:playerId` - Player takes a card
 - `POST /game/:gameId/stand/:playerId` - Player stands
 - `GET /game/:gameId/results` - Get final game results
+
+### Glitchjack Gameplay
+- `GET /game/new/glitchjack` - Create new Glitchjack game (1 random deck, 6 max players)
+- `GET /game/new/glitchjack/:decks` - Create Glitchjack game with multiple random decks
+- `GET /game/new/glitchjack/:decks/:players` - Create Glitchjack game with specified decks and max players
+- `POST /game/:gameId/glitchjack/start` - Start Glitchjack game (deals initial cards)
+- `POST /game/:gameId/glitchjack/hit/:playerId` - Player takes a card
+- `POST /game/:gameId/glitchjack/stand/:playerId` - Player stands
+- `GET /game/:gameId/glitchjack/results` - Get final game results
 
 ### Cribbage Gameplay
 - `GET /game/new/cribbage` - Create new cribbage game (2 players, 1 deck)
@@ -241,6 +251,7 @@ This is a comprehensive Card Game API built with Go and the Gin web framework. T
 - **Suits**: 0=Hearts, 1=Diamonds, 2=Clubs, 3=Spades
 - **Game Status**: waiting, in_progress, finished
 - **Blackjack Results**: blackjack, win, push, bust, lose
+- **Glitchjack Results**: Same as Blackjack (blackjack, win, push, bust, lose)
 - **Custom Cards**: Free-form with name, optional rank/suit, attributes, game_compatible flag, tombstone deletion
 
 ### Card Images
@@ -255,6 +266,14 @@ This is a comprehensive Card Game API built with Go and the Gin web framework. T
 - Blackjack: 21 with exactly 2 cards
 - Dealer: hits on 16, stands on 17
 - Automatic dealer play when all players finish
+
+### Glitchjack Logic
+- Same hand values as Blackjack (Aces: 1 or 11, Face cards: 10)
+- Same dealer rules (hits on 16, stands on 17)
+- Same win conditions (blackjack, win, push, bust, lose)
+- Random deck composition: 52 cards randomly selected from standard deck
+- Duplicates allowed: Multiple copies of same card possible in single deck
+- Card counting ineffective due to unpredictable deck composition
 
 ### Thread Safety
 - GameManager uses read-write mutexes

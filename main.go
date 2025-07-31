@@ -69,7 +69,7 @@ func main() {
 	
 	// Configure CORS middleware
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3001"},
+		AllowOrigins:     []string{"http://localhost:3001", "http://glitchjack.com"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
@@ -149,6 +149,15 @@ func main() {
 	r.POST("/game/:gameId/hit/:playerId", deps.PlayerHit)
 	r.POST("/game/:gameId/stand/:playerId", deps.PlayerStand)
 	r.GET("/game/:gameId/results", deps.GetGameResults)
+	
+	// Glitchjack routes
+	r.GET("/game/new/glitchjack", deps.CreateNewGlitchjackGame)
+	r.GET("/game/new/glitchjack/:decks", deps.CreateNewGlitchjackGameWithDecks)
+	r.GET("/game/new/glitchjack/:decks/:players", deps.CreateNewGlitchjackGameWithPlayers)
+	r.POST("/game/:gameId/glitchjack/start", deps.StartGlitchjackGame)
+	r.POST("/game/:gameId/glitchjack/hit/:playerId", deps.GlitchjackHit)
+	r.POST("/game/:gameId/glitchjack/stand/:playerId", deps.GlitchjackStand)
+	r.GET("/game/:gameId/glitchjack/results", deps.GetGlitchjackResults)
 	
 	// Cribbage routes
 	r.GET("/game/new/cribbage", deps.CreateNewCribbageGame)

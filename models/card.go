@@ -26,6 +26,7 @@ const (
 	War                        // War card game
 	GoFish                     // Go Fish game
 	Cribbage                   // Cribbage with full scoring and pegging
+	Glitchjack                 // Glitchjack - blackjack variant with random deck composition
 )
 
 // String returns the string representation of a DeckType for API responses.
@@ -55,6 +56,8 @@ func (gt GameType) String() string {
 		return "GoFish"
 	case Cribbage:
 		return "Cribbage"
+	case Glitchjack:
+		return "Glitchjack"
 	default:
 		return "Blackjack"
 	}

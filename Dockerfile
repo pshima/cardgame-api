@@ -15,8 +15,9 @@ RUN apk add --no-cache git ca-certificates tzdata && \
 RUN addgroup -g 1001 -S builder && \
     adduser -u 1001 -S builder -G builder
 
-# Set working directory
+# Set working directory and ensure builder owns it
 WORKDIR /app
+RUN chown builder:builder /app
 
 # Copy go mod files first for better caching
 COPY --chown=builder:builder go.mod go.sum ./
@@ -28,15 +29,12 @@ RUN go mod download && \
 # Copy all source code including subdirectories
 COPY --chown=builder:builder . .
 
-# Switch to non-root user for building
-USER builder
-
 # Build information
 ARG VERSION=dev
 ARG BUILD_TIME
 ARG COMMIT_HASH
 
-# Build the application with security flags and build info
+# Build the application with security flags and build info (as root to avoid permission issues)
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build \
     -trimpath \
     -ldflags="-w -s -X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)} -X main.CommitHash=${COMMIT_HASH:-unknown}" \
